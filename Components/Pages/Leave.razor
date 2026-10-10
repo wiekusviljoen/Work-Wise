@@ -1,0 +1,106 @@
+@page "/leave"
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+<PageTitle>Leave & absences | LeaveWise</PageTitle>
+
+<div class="page-wrap">
+    <div class="page-title-row">
+        <div>
+            <p class="eyebrow">YOUR TIME, MADE CLEAR</p>
+            <h1>Leave & absences</h1>
+            <p class="page-intro">A clear view of leave requests, balances and the days that matter.</p>
+        </div>
+        <span class="demo-badge">DEMO PREVIEW</span>
+    </div>
+    <div class="notice-banner">
+        <span class="notice-symbol">i</span>
+        <div><strong>Sample data only</strong><p>These balances demonstrate the interface. Real entitlements will be calculated only after your contract, work schedule and applicable rules are confirmed.</p></div>
+    </div>
+    <div class="balance-grid">
+        <div class="balance-card balance-green"><div class="balance-card-label">Annual leave <span>↗</span></div><div class="balance-value">14 <small>days</small></div><div class="balance-foot"><span class="balance-dot"></span>Sample remaining balance</div></div>
+        <div class="balance-card balance-purple"><div class="balance-card-label">Sick leave <span>♡</span></div><div class="balance-value">22 <small>days</small></div><div class="balance-foot"><span class="balance-dot"></span>Sample remaining balance</div></div>
+        <div class="balance-card balance-sand"><div class="balance-card-label">Family responsibility <span>⌂</span></div><div class="balance-value">3 <small>days</small></div><div class="balance-foot"><span class="balance-dot"></span>Example only</div></div>
+    </div>
+    <div class="content-two-col">
+        <section class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">QUICK ACTION</p><h2>Request time off</h2></div><span class="panel-icon">＋</span></div>
+            <EditForm Model="request" OnValidSubmit="SubmitRequest">
+                <DataAnnotationsValidator />
+                <div class="form-field"><label>Leave type</label><InputSelect class="form-control" @bind-Value="request.LeaveType"><option>Annual leave</option><option>Sick leave</option><option>Family responsibility</option><option>Unpaid leave</option><option>Other</option></InputSelect></div>
+                <div class="form-row">
+                    <div class="form-field"><label>First day</label><InputDate class="form-control" @bind-Value="request.StartDate" /></div>
+                    <div class="form-field"><label>Last day</label><InputDate class="form-control" @bind-Value="request.EndDate" /></div>
+                </div>
+                <div class="form-field"><label>Note (optional)</label><InputText class="form-control" @bind-Value="request.Note" placeholder="Add a note for your manager" /></div>
+                @if (!string.IsNullOrWhiteSpace(feedback))
+                {
+                    <div class="inline-feedback">@feedback</div>
+                }
+                <button type="submit" class="button-primary button-wide">Submit demo request <span>→</span></button>
+                <p class="form-footnote">Demo only: requests are not emailed or saved to an account yet.</p>
+            </EditForm>
+        </section>
+        <section class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">RECENT ACTIVITY</p><h2>Request history</h2></div><span class="count-chip">@requests.Count</span></div>
+            @if (requests.Count == 0)
+            {
+                <div class="empty-state"><span class="empty-icon">◷</span><strong>No requests yet</strong><p>Use the form to try the request flow.</p></div>
+            }
+            else
+            {
+                <div class="request-list">
+                    @foreach (var item in requests)
+                    {
+                        <div class="request-item">
+                            <span class="request-date">@item.StartDate.ToString("dd")<small>@item.StartDate.ToString("MMM")</small></span>
+                            <div class="request-detail"><strong>@item.LeaveType</strong><small>@item.StartDate.ToString("dd MMM") – @item.EndDate.ToString("dd MMM yyyy")</small>
+                                @if (!string.IsNullOrWhiteSpace(item.Note))
+                                {
+                                    <small>@item.Note</small>
+                                }
+                            </div>
+                            <span class="status-label status-pending">Draft</span>
+                        </div>
+                    }
+                </div>
+            }
+        </section>
+    </div>
+</div>
+
+@code {
+    private LeaveRequestForm request = new() { StartDate = DateTime.Today.AddDays(7), EndDate = DateTime.Today.AddDays(7) };
+    private List<LeaveRequestForm> requests = new();
+    private string? feedback;
+
+    private void SubmitRequest()
+    {
+        if (request.EndDate.Date < request.StartDate.Date)
+        {
+            feedback = "The last day must be on or after the first day.";
+            return;
+        }
+        if (request.StartDate.Date < DateTime.Today)
+        {
+            feedback = "For this demo, choose today or a future date.";
+            return;
+        }
+
+        requests.Insert(0, new LeaveRequestForm
+        {
+            LeaveType = request.LeaveType,
+            StartDate = request.StartDate,
+            EndDate = request.EndDate,
+            Note = request.Note
+        });
+        feedback = "Demo request added to the activity list. It has not been sent to an employer.";
+        request = new LeaveRequestForm { LeaveType = "Annual leave", StartDate = DateTime.Today.AddDays(7), EndDate = DateTime.Today.AddDays(7) };
+    }
+
+    private sealed class LeaveRequestForm
+    {
+        public string LeaveType { get; set; } = "Annual leave";
+        public DateTime StartDate { get; set; }
+        public DateTime EndDate { get; set; }
+        public string? Note { get; set; }
+    }
+}
