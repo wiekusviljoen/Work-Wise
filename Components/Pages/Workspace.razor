@@ -7,6 +7,7 @@
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject NavigationManager Navigation
+@inject ILogger<Workspace> Logger
 
 <PageTitle>Employer workspace | Work-Wise</PageTitle>
 <div class="page-wrap">
@@ -176,10 +177,17 @@
             messageDetail = "You are recorded as the owner. You can now add an employment record below.";
             await LoadData();
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException ex)
         {
+            Logger.LogError(ex, "Database update failed while creating a workspace for user {UserId}", userId);
             message = "The workspace could not be saved.";
             messageDetail = "Please try again. No employee information was changed.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Unexpected error while creating or refreshing a workspace for user {UserId}", userId);
+            message = "Workspace action needs checking.";
+            messageDetail = "The save may have completed, but the page could not refresh. Reload this page and check the workspace list before trying again.";
         }
         finally { isSaving = false; }
     }
@@ -234,10 +242,17 @@
             messageDetail = "The employee can sign in with this confirmed email to link the record and submit leave requests.";
             await LoadData();
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException ex)
         {
+            Logger.LogError(ex, "Database update failed while creating an employment record for organization {OrganizationId}", employeeInput.OrganizationId);
             message = "The employment record could not be saved.";
             messageDetail = "Please check the details and try again.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Unexpected error while creating or refreshing an employment record for organization {OrganizationId}", employeeInput.OrganizationId);
+            message = "Employment record action needs checking.";
+            messageDetail = "The save may have completed, but the page could not refresh. Reload this page and check Employment records before trying again, to avoid creating a duplicate.";
         }
         finally { isSavingEmployee = false; }
     }
