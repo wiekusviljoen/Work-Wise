@@ -111,23 +111,27 @@ html,body{background:#f3f6fa;color:#14283e}
 
 
 
-/* Mobile navigation: top-right dropdown menu. */
+/* Mobile navigation: reliable CSS-controlled dropdown at the top right. */
+.mobile-menu-checkbox{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
 .mobile-menu-toggle{display:none}
+.mobile-nav-container{position:relative}
 .mobile-brand-row{display:block}
 @media(max-width:760px){
   .sidebar{position:relative;z-index:30;overflow:visible;padding:10px 14px 11px}
+  .mobile-nav-container{position:relative}
   .mobile-brand-row{display:flex;align-items:center;justify-content:space-between;gap:12px;position:relative}
   .brand-block{padding:3px 0!important;min-width:0}
   .brand-lockup{gap:9px;font-size:1.05rem}
   .brand-lockup small{font-size:.49rem;letter-spacing:.08em}
   .brand-mark{width:40px;height:40px;flex-shrink:0}
   .nav-caption,.sidebar-bottom,.app-topbar{display:none}
-  .mobile-menu-toggle{display:inline-flex;flex:0 0 auto;align-items:center;justify-content:center;gap:10px;min-height:42px;padding:0 13px;border:1px solid #35516a;border-radius:10px;background:#193650;color:#f3f7fb;font-size:.84rem;font-weight:700;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
-  .mobile-menu-toggle:focus-visible{outline:3px solid #56c99a;outline-offset:2px}
-  .mobile-menu-chevron{width:8px;height:8px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg);transition:transform .18s ease;margin-top:-4px}
-  .mobile-menu-chevron.is-open{transform:rotate(225deg);margin-top:5px}
-  .app-nav{display:none!important;position:absolute;top:calc(100% + 8px);right:14px;left:auto;width:min(310px,calc(100vw - 28px));max-height:min(72vh,520px);overflow-y:auto;overscroll-behavior:contain;grid-template-columns:1fr;gap:3px;margin:0;padding:7px;background:#10283f;border:1px solid #29465f;border-radius:12px;box-shadow:0 14px 36px #07172655;z-index:50}
-  .app-nav.mobile-nav-open{display:grid!important}
+  .mobile-menu-checkbox{display:block;position:absolute;right:0;top:0;width:46px;height:46px;opacity:0;pointer-events:auto;z-index:4;cursor:pointer;margin:0}
+  .mobile-menu-checkbox:focus-visible + .mobile-brand-row .mobile-menu-toggle{outline:3px solid #56c99a;outline-offset:2px}
+  .mobile-menu-toggle{display:inline-flex;flex:0 0 46px;align-items:center;justify-content:center;gap:8px;width:46px;height:44px;padding:0;border:1px solid #35516a;border-radius:10px;background:#193650;color:#f3f7fb;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+  .mobile-menu-toggle svg{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+  .mobile-menu-chevron{display:none}
+  .app-nav{display:none!important;position:absolute;top:calc(100% + 8px);right:0;left:auto;width:min(310px,calc(100vw - 28px));max-height:min(72vh,520px);overflow-y:auto;overscroll-behavior:contain;grid-template-columns:1fr;gap:3px;margin:0;padding:7px;background:#10283f;border:1px solid #29465f;border-radius:12px;box-shadow:0 14px 36px #07172655;z-index:50}
+  .mobile-menu-checkbox:checked ~ .app-nav{display:grid!important}
   .app-nav .nav-link{display:flex;flex-direction:row;align-items:center;justify-content:flex-start;min-height:44px;padding:12px 13px;font-size:.87rem;line-height:1.35;text-align:left;white-space:normal;border-radius:8px;touch-action:manipulation}
   .app-main{margin-left:0;min-width:0}
   .main-content{padding:15px 13px 23px}
