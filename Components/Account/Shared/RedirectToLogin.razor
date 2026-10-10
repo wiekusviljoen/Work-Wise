@@ -1,8 +1,17 @@
-﻿@inject NavigationManager NavigationManager
+@inject NavigationManager NavigationManager
 
 @code {
     protected override void OnInitialized()
     {
-        NavigationManager.NavigateTo($"Account/Login?returnUrl={Uri.EscapeDataString(NavigationManager.Uri)}", forceLoad: true);
+        // Identity return URLs must be local paths, not absolute URLs.
+        // This also avoids nested/invalid ReturnUrl values when running behind hosting proxies.
+        var relativePath = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
+        var localReturnUrl = string.IsNullOrWhiteSpace(relativePath)
+            ? "/"
+            : "/" + relativePath.TrimStart('/');
+
+        NavigationManager.NavigateTo(
+            $"/Account/Login?returnUrl={Uri.EscapeDataString(localReturnUrl)}",
+            forceLoad: true);
     }
 }
