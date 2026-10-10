@@ -640,6 +640,15 @@ namespace LeaveWise.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
+            modelBuilder.Entity("LeaveWise.Data.AuditEvent", b =>
+                {
+                    b.HasOne("LeaveWise.Data.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("LeaveWise.Data.BenefitReminder", b =>
                 {
                     b.HasOne("LeaveWise.Data.EmploymentRecord", "EmploymentRecord")

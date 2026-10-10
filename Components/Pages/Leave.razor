@@ -1,5 +1,11 @@
 @page "/leave"
-@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using Microsoft.EntityFrameworkCore
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IDbContextFactory<LeaveWise.Data.ApplicationDbContext> DbFactory
+
 <PageTitle>Leave & absences | LeaveWise</PageTitle>
 
 <div class="page-wrap">
@@ -7,100 +13,248 @@
         <div>
             <p class="eyebrow">YOUR TIME, MADE CLEAR</p>
             <h1>Leave & absences</h1>
-            <p class="page-intro">A clear view of leave requests, balances and the days that matter.</p>
+            <p class="page-intro">Submit a request and keep a persistent record of its approval status.</p>
         </div>
-        <span class="demo-badge">DEMO PREVIEW</span>
+        <span class="demo-badge">EARLY ACCESS</span>
     </div>
-    <div class="notice-banner">
-        <span class="notice-symbol">i</span>
-        <div><strong>Sample data only</strong><p>These balances demonstrate the interface. Real entitlements will be calculated only after your contract, work schedule and applicable rules are confirmed.</p></div>
-    </div>
-    <div class="balance-grid">
-        <div class="balance-card balance-green"><div class="balance-card-label">Annual leave <span>↗</span></div><div class="balance-value">14 <small>days</small></div><div class="balance-foot"><span class="balance-dot"></span>Sample remaining balance</div></div>
-        <div class="balance-card balance-purple"><div class="balance-card-label">Sick leave <span>♡</span></div><div class="balance-value">22 <small>days</small></div><div class="balance-foot"><span class="balance-dot"></span>Sample remaining balance</div></div>
-        <div class="balance-card balance-sand"><div class="balance-card-label">Family responsibility <span>⌂</span></div><div class="balance-value">3 <small>days</small></div><div class="balance-foot"><span class="balance-dot"></span>Example only</div></div>
-    </div>
-    <div class="content-two-col">
-        <section class="panel">
-            <div class="panel-heading"><div><p class="eyebrow">QUICK ACTION</p><h2>Request time off</h2></div><span class="panel-icon">＋</span></div>
-            <EditForm Model="request" OnValidSubmit="SubmitRequest">
-                <DataAnnotationsValidator />
-                <div class="form-field"><label>Leave type</label><InputSelect class="form-control" @bind-Value="request.LeaveType"><option>Annual leave</option><option>Sick leave</option><option>Family responsibility</option><option>Unpaid leave</option><option>Other</option></InputSelect></div>
-                <div class="form-row">
-                    <div class="form-field"><label>First day</label><InputDate class="form-control" @bind-Value="request.StartDate" /></div>
-                    <div class="form-field"><label>Last day</label><InputDate class="form-control" @bind-Value="request.EndDate" /></div>
-                </div>
-                <div class="form-field"><label>Note (optional)</label><InputText class="form-control" @bind-Value="request.Note" placeholder="Add a note for your manager" /></div>
-                @if (!string.IsNullOrWhiteSpace(feedback))
+
+    @if (!string.IsNullOrWhiteSpace(feedback))
+    {
+        <div class="notice-banner"><span class="notice-symbol">i</span><div><strong>@feedback</strong><p>@feedbackDetail</p></div></div>
+    }
+
+    @if (isLoading)
+    {
+        <section class="panel"><p>Loading your employment records…</p></section>
+    }
+    else if (employments.Count == 0)
+    {
+        <section class="panel empty-state">
+            <span class="empty-icon">⌂</span>
+            <strong>No linked employment record yet</strong>
+            <p>Ask your employer to add your employment record in their Work-Wise workspace using the email address on your confirmed account. It will appear here after you sign in again.</p>
+            <p class="form-footnote">Leave balances remain unavailable until your contract and applicable policy have been reviewed.</p>
+        </section>
+    }
+    else
+    {
+        <div class="notice-banner">
+            <span class="notice-symbol">i</span>
+            <div><strong>Transparent early-access workflow</strong><p>Requests are saved to the database and await employer review. This version does not calculate legal entitlements or deduct leave balances automatically.</p></div>
+        </div>
+        <div class="content-two-col">
+            <section class="panel">
+                <div class="panel-heading"><div><p class="eyebrow">QUICK ACTION</p><h2>Request time off</h2></div><span class="panel-icon">＋</span></div>
+                <EditForm Model="request" OnValidSubmit="SubmitRequest">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary class="text-danger" />
+                    <div class="form-field">
+                        <label for="employment">Employment record</label>
+                        <InputSelect id="employment" class="form-control" @bind-Value="request.EmploymentRecordId">
+                            @foreach (var employment in employments)
+                            {
+                                <option value="@employment.Id">@employment.Organization.Name — @employment.EmployeeName</option>
+                            }
+                        </InputSelect>
+                    </div>
+                    <div class="form-field"><label for="leave-type">Leave type</label><InputSelect id="leave-type" class="form-control" @bind-Value="request.LeaveType"><option>Annual leave</option><option>Sick leave</option><option>Family responsibility</option><option>Unpaid leave</option><option>Other</option></InputSelect></div>
+                    <div class="form-row">
+                        <div class="form-field"><label for="start-date">First day</label><InputDate id="start-date" class="form-control" @bind-Value="request.StartDate" /></div>
+                        <div class="form-field"><label for="end-date">Last day</label><InputDate id="end-date" class="form-control" @bind-Value="request.EndDate" /></div>
+                    </div>
+                    <div class="form-field"><label for="note">Note (optional)</label><InputTextArea id="note" class="form-control" @bind-Value="request.Note" maxlength="1000" placeholder="Add a note for your manager" /></div>
+                    <button type="submit" class="button-primary button-wide" disabled="@isSaving">@(isSaving ? "Saving…" : "Submit leave request") <span>→</span></button>
+                    <p class="form-footnote">Submitting records a pending request; it does not mean the leave is approved.</p>
+                </EditForm>
+            </section>
+            <section class="panel">
+                <div class="panel-heading"><div><p class="eyebrow">RECENT ACTIVITY</p><h2>Request history</h2></div><span class="count-chip">@requests.Count</span></div>
+                @if (requests.Count == 0)
                 {
-                    <div class="inline-feedback">@feedback</div>
+                    <div class="empty-state"><span class="empty-icon">◷</span><strong>No requests yet</strong><p>Your saved requests will appear here.</p></div>
                 }
-                <button type="submit" class="button-primary button-wide">Submit demo request <span>→</span></button>
-                <p class="form-footnote">Demo only: requests are not emailed or saved to an account yet.</p>
-            </EditForm>
-        </section>
-        <section class="panel">
-            <div class="panel-heading"><div><p class="eyebrow">RECENT ACTIVITY</p><h2>Request history</h2></div><span class="count-chip">@requests.Count</span></div>
-            @if (requests.Count == 0)
-            {
-                <div class="empty-state"><span class="empty-icon">◷</span><strong>No requests yet</strong><p>Use the form to try the request flow.</p></div>
-            }
-            else
-            {
-                <div class="request-list">
-                    @foreach (var item in requests)
-                    {
-                        <div class="request-item">
-                            <span class="request-date">@item.StartDate.ToString("dd")<small>@item.StartDate.ToString("MMM")</small></span>
-                            <div class="request-detail"><strong>@item.LeaveType</strong><small>@item.StartDate.ToString("dd MMM") – @item.EndDate.ToString("dd MMM yyyy")</small>
-                                @if (!string.IsNullOrWhiteSpace(item.Note))
-                                {
-                                    <small>@item.Note</small>
-                                }
+                else
+                {
+                    <div class="request-list">
+                        @foreach (var item in requests)
+                        {
+                            <div class="request-item">
+                                <span class="request-date">@item.StartDate.ToString("dd")<small>@item.StartDate.ToString("MMM")</small></span>
+                                <div class="request-detail"><strong>@item.LeaveType</strong><small>@item.StartDate.ToString("dd MMM") – @item.EndDate.ToString("dd MMM yyyy")</small><small>@item.OrganizationName</small>
+                                    @if (!string.IsNullOrWhiteSpace(item.EmployeeNote))
+                                    {
+                                        <small>@item.EmployeeNote</small>
+                                    }
+                                </div>
+                                <span class="status-label @(item.Status == "Approved" ? "status-approved" : item.Status == "Rejected" ? "status-rejected" : "status-pending")">@item.Status</span>
                             </div>
-                            <span class="status-label status-pending">Draft</span>
-                        </div>
-                    }
-                </div>
-            }
-        </section>
-    </div>
+                        }
+                    </div>
+                }
+            </section>
+        </div>
+    }
 </div>
 
 @code {
-    private LeaveRequestForm request = new() { StartDate = DateTime.Today.AddDays(7), EndDate = DateTime.Today.AddDays(7) };
-    private List<LeaveRequestForm> requests = new();
+    private string? userId;
+    private bool isLoading = true;
+    private bool isSaving;
     private string? feedback;
+    private string? feedbackDetail;
+    private readonly List<EmploymentOption> employments = new();
+    private readonly List<RequestView> requests = new();
+    private LeaveRequestInput request = new();
 
-    private void SubmitRequest()
+    protected override async Task OnInitializedAsync()
     {
-        if (request.EndDate.Date < request.StartDate.Date)
+        var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        userId = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var email = state.User.FindFirstValue(ClaimTypes.Email);
+        if (string.IsNullOrWhiteSpace(userId))
         {
-            feedback = "The last day must be on or after the first day.";
-            return;
-        }
-        if (request.StartDate.Date < DateTime.Today)
-        {
-            feedback = "For this demo, choose today or a future date.";
+            isLoading = false;
+            feedback = "Please sign in to request leave.";
             return;
         }
 
-        requests.Insert(0, new LeaveRequestForm
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        // Only link by exact email for a signed-in account whose email is confirmed by the Identity sign-in policy.
+        if (!string.IsNullOrWhiteSpace(email))
         {
-            LeaveType = request.LeaveType,
-            StartDate = request.StartDate,
-            EndDate = request.EndDate,
-            Note = request.Note
-        });
-        feedback = "Demo request added to the activity list. It has not been sent to an employer.";
-        request = new LeaveRequestForm { LeaveType = "Annual leave", StartDate = DateTime.Today.AddDays(7), EndDate = DateTime.Today.AddDays(7) };
+            var unlinked = await db.EmploymentRecords
+                .Where(x => x.EmployeeUserId == null && x.EmployeeEmail.ToLower() == email.ToLower())
+                .ToListAsync();
+            foreach (var record in unlinked)
+                record.EmployeeUserId = userId;
+            if (unlinked.Count > 0)
+                await db.SaveChangesAsync();
+        }
+
+        var rows = await db.EmploymentRecords
+            .Include(x => x.Organization)
+            .Where(x => x.EmployeeUserId == userId && x.Status == "Active")
+            .OrderBy(x => x.Organization.Name)
+            .ToListAsync();
+        employments.AddRange(rows.Select(x => new EmploymentOption(x.Id, x.EmployeeName, x.Organization)));
+        if (employments.Count > 0)
+        {
+            request.EmploymentRecordId = employments[0].Id;
+            var ids = employments.Select(x => x.Id).ToArray();
+            var saved = await db.LeaveRequests
+                .Include(x => x.EmploymentRecord).ThenInclude(x => x.Organization)
+                .Where(x => ids.Contains(x.EmploymentRecordId))
+                .OrderByDescending(x => x.RequestedUtc)
+                .Take(100)
+                .ToListAsync();
+            requests.AddRange(saved.Select(x => new RequestView(x.Id, x.LeaveType, x.StartDate, x.EndDate, x.EmployeeNote, x.Status, x.EmploymentRecord.Organization.Name)));
+        }
+        isLoading = false;
     }
 
-    private sealed class LeaveRequestForm
+    private async Task SubmitRequest()
     {
-        public string LeaveType { get; set; } = "Annual leave";
-        public DateTime StartDate { get; set; }
-        public DateTime EndDate { get; set; }
-        public string? Note { get; set; }
+        if (isSaving || string.IsNullOrWhiteSpace(userId)) return;
+        feedback = null;
+        if (request.EndDate < request.StartDate)
+        {
+            feedback = "The end date must be on or after the start date.";
+            feedbackDetail = "Please correct the dates and try again.";
+            return;
+        }
+        if (request.StartDate < DateOnly.FromDateTime(DateTime.Today))
+        {
+            feedback = "Choose today or a future date.";
+            feedbackDetail = "Past-dated requests are not accepted in this early-access flow.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(request.LeaveType) || request.LeaveType.Length > 48)
+        {
+            feedback = "Choose a valid leave type.";
+            feedbackDetail = "No request was saved.";
+            return;
+        }
+
+        isSaving = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var employment = await db.EmploymentRecords
+                .Include(x => x.Organization)
+                .SingleOrDefaultAsync(x => x.Id == request.EmploymentRecordId && x.EmployeeUserId == userId && x.Status == "Active");
+            if (employment is null)
+            {
+                feedback = "Your employment record could not be verified.";
+                feedbackDetail = "Refresh the page and select an active record linked to your account.";
+                return;
+            }
+
+            var scheduledDays = new HashSet<DayOfWeek>();
+            for (var day = 0; day < 7; day++)
+                if ((employment.ScheduledWorkdaysMask & (1 << day)) != 0)
+                    scheduledDays.Add((DayOfWeek)(((day + 1) % 7)));
+            if (scheduledDays.Count == 0)
+            {
+                feedback = "Your work schedule needs review.";
+                feedbackDetail = "Ask your employer to configure scheduled workdays before submitting leave.";
+                return;
+            }
+
+            var workdays = LeaveWise.Domain.LeaveCalculator.CountScheduledWorkdays(request.StartDate, request.EndDate, scheduledDays);
+            if (workdays == 0)
+            {
+                feedback = "The selected dates contain no scheduled workdays.";
+                feedbackDetail = "Choose dates that include at least one scheduled workday.";
+                return;
+            }
+
+            var record = new LeaveWise.Data.LeaveRequestRecord
+            {
+                EmploymentRecordId = employment.Id,
+                LeaveType = request.LeaveType,
+                StartDate = request.StartDate,
+                EndDate = request.EndDate,
+                ScheduledWorkdays = workdays,
+                EmployeeNote = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim(),
+                Status = "Pending",
+                RequestedByUserId = userId
+            };
+            db.LeaveRequests.Add(record);
+            await db.AuditEvents.AddAsync(new LeaveWise.Data.AuditEvent
+            {
+                OrganizationId = employment.OrganizationId,
+                ActorUserId = userId,
+                Action = "LeaveRequestSubmitted",
+                EntityType = "LeaveRequest",
+                EntityId = record.Id.ToString(),
+                DetailsJson = System.Text.Json.JsonSerializer.Serialize(new { record.LeaveType, record.StartDate, record.EndDate, ScheduledWorkdays = workdays })
+            });
+            await db.SaveChangesAsync();
+            requests.Insert(0, new RequestView(record.Id, record.LeaveType, record.StartDate, record.EndDate, record.EmployeeNote, record.Status, employment.Organization.Name));
+            feedback = "Leave request saved.";
+            feedbackDetail = $"It is pending employer review. {workdays} scheduled workday(s) were counted; no balance has been deducted.";
+            request = new LeaveRequestInput { EmploymentRecordId = employment.Id, StartDate = DateOnly.FromDateTime(DateTime.Today.AddDays(7)), EndDate = DateOnly.FromDateTime(DateTime.Today.AddDays(7)) };
+        }
+        catch (DbUpdateException)
+        {
+            feedback = "The request could not be saved.";
+            feedbackDetail = "Please try again. No leave balance was changed.";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private sealed record EmploymentOption(Guid Id, string EmployeeName, LeaveWise.Data.Organization Organization);
+    private sealed record RequestView(Guid Id, string LeaveType, DateOnly StartDate, DateOnly EndDate, string? EmployeeNote, string Status, string OrganizationName);
+    private sealed class LeaveRequestInput
+    {
+        [Required] public Guid EmploymentRecordId { get; set; }
+        [Required] public string LeaveType { get; set; } = "Annual leave";
+        public DateOnly StartDate { get; set; } = DateOnly.FromDateTime(DateTime.Today.AddDays(7));
+        public DateOnly EndDate { get; set; } = DateOnly.FromDateTime(DateTime.Today.AddDays(7));
+        [StringLength(1000)] public string? Note { get; set; }
     }
 }

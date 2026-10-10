@@ -1,0 +1,155 @@
+@page "/approvals"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using System.Security.Claims
+@using Microsoft.EntityFrameworkCore
+@using LeaveWise.Data
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+
+<PageTitle>Leave approvals | Work-Wise</PageTitle>
+<div class="page-wrap">
+    <div class="page-title-row">
+        <div><p class="eyebrow">EMPLOYER WORKFLOW</p><h1>Leave approvals</h1><p class="page-intro">Review submitted leave requests for the organizations you own.</p></div>
+        <span class="demo-badge">EARLY ACCESS</span>
+    </div>
+    @if (!string.IsNullOrWhiteSpace(feedback))
+    {
+        <div class="notice-banner"><span class="notice-symbol">i</span><div><strong>@feedback</strong><p>@feedbackDetail</p></div></div>
+    }
+    @if (isLoading)
+    {
+        <section class="panel"><p>Loading requests…</p></section>
+    }
+    else if (ownedOrganizationIds.Count == 0)
+    {
+        <section class="panel empty-state"><span class="empty-icon">⌂</span><strong>No employer workspace access</strong><p>Create a workspace or ask its owner to grant you an appropriate role. Only workspace owners can review requests in this early-access version.</p></section>
+    }
+    else if (requests.Count == 0)
+    {
+        <section class="panel empty-state"><span class="empty-icon">✓</span><strong>You're all caught up</strong><p>There are no pending leave requests in your workspaces.</p></section>
+    }
+    else
+    {
+        <section class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">AWAITING YOUR DECISION</p><h2>Pending requests</h2></div><span class="count-chip">@requests.Count</span></div>
+            @foreach (var item in requests)
+            {
+                <div class="approval-item">
+                    <div class="approval-main">
+                        <div class="request-date">@item.StartDate.ToString("dd")<small>@item.StartDate.ToString("MMM")</small></div>
+                        <div class="request-detail">
+                            <strong>@item.EmployeeName — @item.LeaveType</strong>
+                            <small>@item.OrganizationName</small>
+                            <small>@item.StartDate.ToString("dd MMM yyyy") – @item.EndDate.ToString("dd MMM yyyy") · @item.ScheduledWorkdays scheduled workday(s)</small>
+                            @if (!string.IsNullOrWhiteSpace(item.EmployeeNote)) { <p>@item.EmployeeNote</p> }
+                            <small>Submitted @item.RequestedUtc.ToLocalTime().ToString("dd MMM yyyy, HH:mm")</small>
+                        </div>
+                    </div>
+                    <div class="approval-actions">
+                        <button class="button-primary" type="button" disabled="@isReviewing" @onclick="() => ReviewRequest(item.Id, true)">Approve</button>
+                        <button class="button-secondary" type="button" disabled="@isReviewing" @onclick="() => ReviewRequest(item.Id, false)">Decline</button>
+                    </div>
+                </div>
+            }
+        </section>
+    }
+    <p class="form-footnote" style="margin-top:16px">Approvals update request status and create an audit event. Leave balances are not changed automatically until an entitlement policy has been reviewed and configured.</p>
+</div>
+
+@code {
+    private string? userId;
+    private bool isLoading = true;
+    private bool isReviewing;
+    private string? feedback;
+    private string? feedbackDetail;
+    private readonly List<Guid> ownedOrganizationIds = new();
+    private readonly List<ApprovalItem> requests = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        userId = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(userId)) { isLoading = false; return; }
+        await LoadRequests();
+        isLoading = false;
+    }
+
+    private async Task LoadRequests()
+    {
+        requests.Clear();
+        ownedOrganizationIds.Clear();
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var ownedIds = await db.OrganizationMemberships
+            .Where(x => x.UserId == userId && x.IsActive && x.Role == "Owner")
+            .Select(x => x.OrganizationId).ToListAsync();
+        ownedOrganizationIds.AddRange(ownedIds);
+        if (ownedIds.Count == 0) return;
+
+        var rows = await db.LeaveRequests
+            .Include(x => x.EmploymentRecord).ThenInclude(x => x.Organization)
+            .Where(x => ownedIds.Contains(x.EmploymentRecord.OrganizationId) && x.Status == "Pending")
+            .OrderBy(x => x.StartDate).ThenBy(x => x.RequestedUtc)
+            .Take(200).ToListAsync();
+        requests.AddRange(rows.Select(x => new ApprovalItem(x.Id, x.EmploymentRecord.EmployeeName, x.EmploymentRecord.Organization.Name,
+            x.LeaveType, x.StartDate, x.EndDate, x.ScheduledWorkdays ?? 0, x.EmployeeNote, x.RequestedUtc, x.RequestedByUserId)));
+    }
+
+    private async Task ReviewRequest(Guid requestId, bool approve)
+    {
+        if (isReviewing || string.IsNullOrWhiteSpace(userId)) return;
+        isReviewing = true;
+        feedback = null;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var item = await db.LeaveRequests.Include(x => x.EmploymentRecord)
+                .SingleOrDefaultAsync(x => x.Id == requestId && x.Status == "Pending");
+            if (item is null)
+            {
+                feedback = "This request is no longer pending.";
+                feedbackDetail = "Refresh the page to see the latest status.";
+                return;
+            }
+            var owner = await db.OrganizationMemberships.AnyAsync(x =>
+                x.OrganizationId == item.EmploymentRecord.OrganizationId && x.UserId == userId && x.IsActive && x.Role == "Owner");
+            if (!owner)
+            {
+                feedback = "You are not authorized to review this request.";
+                feedbackDetail = "Only an active owner of the request's organization can decide it.";
+                return;
+            }
+            if (item.RequestedByUserId == userId)
+            {
+                feedback = "You cannot approve or decline your own leave request.";
+                feedbackDetail = "Ask another authorized organization owner to review it.";
+                return;
+            }
+
+            item.Status = approve ? "Approved" : "Rejected";
+            item.ReviewedByUserId = userId;
+            item.DecisionUtc = DateTime.UtcNow;
+            db.AuditEvents.Add(new AuditEvent
+            {
+                OrganizationId = item.EmploymentRecord.OrganizationId,
+                ActorUserId = userId,
+                Action = approve ? "LeaveRequestApproved" : "LeaveRequestRejected",
+                EntityType = "LeaveRequest",
+                EntityId = item.Id.ToString(),
+                DetailsJson = System.Text.Json.JsonSerializer.Serialize(new { item.LeaveType, item.StartDate, item.EndDate, item.Status })
+            });
+            await db.SaveChangesAsync();
+            feedback = approve ? "Leave request approved." : "Leave request declined.";
+            feedbackDetail = "The employee can see the decision in their request history. The leave balance was not changed.";
+            await LoadRequests();
+        }
+        catch (DbUpdateException)
+        {
+            feedback = "The decision could not be saved.";
+            feedbackDetail = "Please refresh and try again.";
+        }
+        finally { isReviewing = false; }
+    }
+
+    private sealed record ApprovalItem(Guid Id, string EmployeeName, string OrganizationName, string LeaveType,
+        DateOnly StartDate, DateOnly EndDate, decimal ScheduledWorkdays, string? EmployeeNote, DateTime RequestedUtc, string RequestedByUserId);
+}

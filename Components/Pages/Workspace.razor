@@ -8,10 +8,10 @@
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject NavigationManager Navigation
 
-<PageTitle>Employer workspace | LeaveWise</PageTitle>
+<PageTitle>Employer workspace | Work-Wise</PageTitle>
 <div class="page-wrap">
     <div class="page-title-row">
-        <div><p class="eyebrow">YOUR COMPANY, YOUR RECORDS</p><h1>Employer workspace</h1><p class="page-intro">Create a private company workspace. Membership records are tied to your signed-in account.</p></div>
+        <div><p class="eyebrow">YOUR COMPANY, YOUR RECORDS</p><h1>Employer workspace</h1><p class="page-intro">Manage your company workspace and set up employment records.</p></div>
         <span class="demo-badge">EARLY ACCESS</span>
     </div>
     @if (!string.IsNullOrWhiteSpace(message))
@@ -28,12 +28,11 @@
             <section class="panel">
                 <div class="panel-heading"><div><p class="eyebrow">NEW ORGANIZATION</p><h2>Create a company workspace</h2></div><span class="panel-icon">＋</span></div>
                 <EditForm Model="input" OnValidSubmit="CreateWorkspace">
-                    <DataAnnotationsValidator />
-                    <ValidationSummary class="text-danger" />
+                    <DataAnnotationsValidator /><ValidationSummary class="text-danger" />
                     <div class="form-field"><label for="org-name">Company or employer name</label><InputText id="org-name" class="form-control" @bind-Value="input.Name" maxlength="160" placeholder="e.g. Example Trading (Pty) Ltd" /><ValidationMessage For="@(() => input.Name)" /></div>
                     <div class="form-field"><label for="country">Primary country</label><InputSelect id="country" class="form-control" @bind-Value="input.CountryCode"><option value="NA">Namibia</option><option value="ZA">South Africa</option></InputSelect></div>
                     <button class="button-primary button-wide" type="submit" disabled="@isSaving">@((isSaving ? "Creating…" : "Create workspace")) <span>→</span></button>
-                    <p class="form-footnote">You will be recorded as the workspace owner. Staff invitations and payroll integrations are not enabled yet.</p>
+                    <p class="form-footnote">You will be recorded as the workspace owner.</p>
                 </EditForm>
             </section>
             <section class="panel">
@@ -51,15 +50,61 @@
                 }
             </section>
         </div>
+
+        @if (ownedOrganizations.Count > 0)
+        {
+            <section class="panel" style="margin-top:24px">
+                <div class="panel-heading"><div><p class="eyebrow">EMPLOYMENT SETUP</p><h2>Add an employee record</h2></div><span class="panel-icon">＋</span></div>
+                <p class="page-intro">Add the employee's name and email address. When they sign in with that same confirmed email, Work-Wise can link the record to their account. Do not enter sensitive medical details here.</p>
+                <EditForm Model="employeeInput" OnValidSubmit="CreateEmployment">
+                    <DataAnnotationsValidator /><ValidationSummary class="text-danger" />
+                    <div class="form-row">
+                        <div class="form-field"><label for="employee-org">Company</label><InputSelect id="employee-org" class="form-control" @bind-Value="employeeInput.OrganizationId">
+                            @foreach (var organization in ownedOrganizations) { <option value="@organization.Id">@organization.Name</option> }
+                        </InputSelect></div>
+                        <div class="form-field"><label for="employee-name">Employee full name</label><InputText id="employee-name" class="form-control" @bind-Value="employeeInput.EmployeeName" maxlength="160" /><ValidationMessage For="@(() => employeeInput.EmployeeName)" /></div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-field"><label for="employee-email">Employee email</label><InputText id="employee-email" inputmode="email" class="form-control" @bind-Value="employeeInput.EmployeeEmail" maxlength="320" /><ValidationMessage For="@(() => employeeInput.EmployeeEmail)" /></div>
+                        <div class="form-field"><label for="start-date">Employment start date</label><InputDate id="start-date" class="form-control" @bind-Value="employeeInput.EmploymentStartDate" /></div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-field"><label for="weekly-hours">Contracted weekly hours</label><InputNumber id="weekly-hours" class="form-control" @bind-Value="employeeInput.WeeklyHours" min="1" max="168" step="0.5" /></div>
+                        <div class="form-field"><label>Scheduled workdays</label><p class="form-footnote">Monday to Friday is the initial schedule. Weekend and shift patterns need configuration before leave calculations can be relied on.</p></div>
+                    </div>
+                    <button class="button-primary" type="submit" disabled="@isSavingEmployee">@(isSavingEmployee ? "Saving…" : "Create employment record") <span>→</span></button>
+                </EditForm>
+            </section>
+        }
+
+        <section class="panel" style="margin-top:24px">
+            <div class="panel-heading"><div><p class="eyebrow">EMPLOYEE RECORDS</p><h2>Employment records</h2></div><span class="count-chip">@employmentRecords.Count</span></div>
+            @if (employmentRecords.Count == 0)
+            {
+                <div class="empty-state"><strong>No employee records yet</strong><p>Create a company workspace and add an employee record to begin.</p></div>
+            }
+            else
+            {
+                @foreach (var employee in employmentRecords)
+                {
+                    <div class="workspace-item"><div class="workspace-symbol">♙</div><div class="workspace-item-main"><strong>@employee.EmployeeName</strong><small>@employee.OrganizationName · @employee.EmployeeEmail</small><small>Started @employee.EmploymentStartDate.ToString("dd MMM yyyy") · @employee.Status</small></div></div>
+                }
+            }
+        </section>
+        <p class="form-footnote" style="margin-top:16px">Staff invitations, contract uploads, payroll integrations and legally verified leave policies are not enabled yet. Keep employee data minimal while testing.</p>
     }
 </div>
 
 @code {
     private readonly WorkspaceInput input = new();
+    private readonly EmployeeInput employeeInput = new();
     private readonly List<OrganizationMembership> memberships = new();
+    private readonly List<OrganizationOption> ownedOrganizations = new();
+    private readonly List<EmploymentView> employmentRecords = new();
     private string? userId;
     private bool isLoading = true;
     private bool isSaving;
+    private bool isSavingEmployee;
     private string? message;
     private string? messageDetail;
 
@@ -72,20 +117,30 @@
             Navigation.NavigateTo("Account/Login", forceLoad: true);
             return;
         }
-        await LoadMemberships();
+        await LoadData();
         isLoading = false;
     }
 
-    private async Task LoadMemberships()
+    private async Task LoadData()
     {
         memberships.Clear();
+        ownedOrganizations.Clear();
+        employmentRecords.Clear();
         await using var db = await DbFactory.CreateDbContextAsync();
-        var rows = await db.OrganizationMemberships
-            .Include(x => x.Organization)
+        var rows = await db.OrganizationMemberships.Include(x => x.Organization)
             .Where(x => x.UserId == userId && x.IsActive)
-            .OrderBy(x => x.Organization.Name)
-            .ToListAsync();
+            .OrderBy(x => x.Organization.Name).ToListAsync();
         memberships.AddRange(rows);
+        ownedOrganizations.AddRange(rows.Where(x => x.Role == "Owner")
+            .Select(x => new OrganizationOption(x.OrganizationId, x.Organization.Name, x.Organization.CountryCode)));
+        if (ownedOrganizations.Count > 0 && !ownedOrganizations.Any(x => x.Id == employeeInput.OrganizationId))
+            employeeInput.OrganizationId = ownedOrganizations[0].Id;
+
+        var organizationIds = rows.Select(x => x.OrganizationId).ToArray();
+        var staff = await db.EmploymentRecords.Include(x => x.Organization)
+            .Where(x => organizationIds.Contains(x.OrganizationId))
+            .OrderBy(x => x.EmployeeName).ToListAsync();
+        employmentRecords.AddRange(staff.Select(x => new EmploymentView(x.EmployeeName, x.EmployeeEmail, x.Organization.Name, x.EmploymentStartDate, x.Status)));
     }
 
     private async Task CreateWorkspace()
@@ -95,7 +150,6 @@
         message = null;
         try
         {
-            await using var db = await DbFactory.CreateDbContextAsync();
             var name = input.Name.Trim();
             var country = input.CountryCode.Trim().ToUpperInvariant();
             if (country is not ("NA" or "ZA"))
@@ -104,9 +158,8 @@
                 messageDetail = "The first release supports Namibia and South Africa only.";
                 return;
             }
-
-            var duplicate = await db.OrganizationMemberships
-                .Include(x => x.Organization)
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var duplicate = await db.OrganizationMemberships.Include(x => x.Organization)
                 .AnyAsync(x => x.UserId == userId && x.IsActive && x.Organization.Name.ToLower() == name.ToLower() && x.Organization.CountryCode == country);
             if (duplicate)
             {
@@ -114,38 +167,94 @@
                 messageDetail = "Choose the existing workspace or use a different name.";
                 return;
             }
-
             var organization = new Organization { Name = name, CountryCode = country };
             db.Organizations.Add(organization);
-            db.OrganizationMemberships.Add(new OrganizationMembership
-            {
-                Organization = organization,
-                UserId = userId,
-                Role = "Owner",
-                IsActive = true
-            });
+            db.OrganizationMemberships.Add(new OrganizationMembership { Organization = organization, UserId = userId, Role = "Owner", IsActive = true });
             await db.SaveChangesAsync();
-            await LoadMemberships();
             input.Name = "";
             message = "Workspace created.";
-            messageDetail = "Your account is now recorded as the owner. Staff records and invitations are the next development step.";
+            messageDetail = "You are recorded as the owner. You can now add an employment record below.";
+            await LoadData();
         }
         catch (DbUpdateException)
         {
             message = "The workspace could not be saved.";
             messageDetail = "Please try again. No employee information was changed.";
         }
-        finally
+        finally { isSaving = false; }
+    }
+
+    private async Task CreateEmployment()
+    {
+        if (isSavingEmployee || string.IsNullOrWhiteSpace(userId)) return;
+        isSavingEmployee = true;
+        message = null;
+        try
         {
-            isSaving = false;
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var organization = await db.Organizations.SingleOrDefaultAsync(x => x.Id == employeeInput.OrganizationId);
+            var isOwner = await db.OrganizationMemberships.AnyAsync(x => x.OrganizationId == employeeInput.OrganizationId && x.UserId == userId && x.IsActive && x.Role == "Owner");
+            if (organization is null || !isOwner)
+            {
+                message = "You do not have permission to add an employee to that workspace.";
+                messageDetail = "Only an active workspace owner can create employment records.";
+                return;
+            }
+            var email = employeeInput.EmployeeEmail.Trim().ToLowerInvariant();
+            var exists = await db.EmploymentRecords.AnyAsync(x => x.OrganizationId == organization.Id && x.EmployeeEmail.ToLower() == email && x.Status == "Active");
+            if (exists)
+            {
+                message = "An active employment record already exists for that email in this workspace.";
+                messageDetail = "Review the existing record instead of creating a duplicate.";
+                return;
+            }
+            var record = new EmploymentRecord
+            {
+                OrganizationId = organization.Id,
+                EmployeeName = employeeInput.EmployeeName.Trim(),
+                EmployeeEmail = email,
+                CountryCode = organization.CountryCode,
+                EmploymentStartDate = employeeInput.EmploymentStartDate,
+                CurrencyCode = organization.CountryCode == "NA" ? "NAD" : "ZAR",
+                WeeklyHours = employeeInput.WeeklyHours,
+                ScheduledWorkdaysMask = 31,
+                Status = "Active"
+            };
+            db.EmploymentRecords.Add(record);
+            db.AuditEvents.Add(new AuditEvent
+            {
+                OrganizationId = organization.Id, ActorUserId = userId, Action = "EmploymentRecordCreated",
+                EntityType = "EmploymentRecord", EntityId = record.Id.ToString(),
+                DetailsJson = System.Text.Json.JsonSerializer.Serialize(new { record.EmployeeEmail, record.EmploymentStartDate, record.WeeklyHours })
+            });
+            await db.SaveChangesAsync();
+            employeeInput.EmployeeName = "";
+            employeeInput.EmployeeEmail = "";
+            message = "Employment record created.";
+            messageDetail = "The employee can sign in with this confirmed email to link the record and submit leave requests.";
+            await LoadData();
         }
+        catch (DbUpdateException)
+        {
+            message = "The employment record could not be saved.";
+            messageDetail = "Please check the details and try again.";
+        }
+        finally { isSavingEmployee = false; }
     }
 
     private sealed class WorkspaceInput
     {
-        [Required, StringLength(160, MinimumLength = 2)]
-        public string Name { get; set; } = "";
-        [Required, RegularExpression("NA|ZA")]
-        public string CountryCode { get; set; } = "NA";
+        [Required, StringLength(160, MinimumLength = 2)] public string Name { get; set; } = "";
+        [Required, RegularExpression("NA|ZA")] public string CountryCode { get; set; } = "NA";
     }
+    private sealed class EmployeeInput
+    {
+        [Required] public Guid OrganizationId { get; set; }
+        [Required, StringLength(160, MinimumLength = 2)] public string EmployeeName { get; set; } = "";
+        [Required, EmailAddress, StringLength(320)] public string EmployeeEmail { get; set; } = "";
+        [Required] public DateOnly EmploymentStartDate { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+        [Range(1, 168)] public decimal WeeklyHours { get; set; } = 45m;
+    }
+    private sealed record OrganizationOption(Guid Id, string Name, string CountryCode);
+    private sealed record EmploymentView(string EmployeeName, string EmployeeEmail, string OrganizationName, DateOnly EmploymentStartDate, string Status);
 }
