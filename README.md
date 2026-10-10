@@ -12,6 +12,7 @@ Work-Wise (working product name: LeaveWise) is an employment leave and benefits 
 - Leave requests are stored in the database, scheduled workdays are counted from the recorded weekday schedule, and request submissions/decisions create audit events.
 - Organization owners can approve or decline pending requests. A user cannot decide their own request.
 - Leave request decisions do not change leave balances yet; policy and entitlement rules must be reviewed before ledger movements are enabled.
+- A source-linked Namibia/South Africa statutory leave catalog is available, including a reference to South Africa's parental-leave Constitutional Court framework. Every catalog entry is explicitly marked for legal review and is not used to calculate balances.
 - Contract selection is a local filename preview only. Files are not uploaded or retained.
 - Dashboard balances and benefits are sample data, not legal or payroll calculations.
 

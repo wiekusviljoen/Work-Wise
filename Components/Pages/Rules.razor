@@ -1,0 +1,55 @@
+@page "/rules"
+@using LeaveWise.Domain
+
+<PageTitle>Leave rules & sources | Work-Wise</PageTitle>
+<div class="page-wrap">
+    <div class="page-title-row">
+        <div><p class="eyebrow">TRANSPARENCY FIRST</p><h1>Leave rules & sources</h1><p class="page-intro">A source-linked starting point for statutory leave in Namibia and South Africa.</p></div>
+        <span class="demo-badge">CATALOG @LeavePolicyCatalog.CatalogVersion</span>
+    </div>
+    <div class="notice-banner">
+        <span class="notice-symbol">!</span>
+        <div><strong>Reference only — not a legal determination</strong><p>Every rule below is flagged for qualified legal review. Sectoral instruments, collective agreements, employment contracts, work patterns, court orders and later amendments can change the result. These entries are not yet used to calculate or deduct leave balances.</p></div>
+    </div>
+
+    <section class="rules-country-section">
+        <div class="section-heading"><div><p class="eyebrow">COUNTRY CODE NA</p><h2>Namibia</h2></div><p>Labour Act 11 of 2007, Chapter 3 — leave provisions.</p></div>
+        <div class="rules-grid">
+            @foreach (var rule in LeavePolicyCatalog.ForCountry("NA"))
+            {
+                <article class="rule-card">
+                    <div class="rule-card-top"><span class="rule-type">@rule.LeaveType</span><span class="status-label status-review">Review required</span></div>
+                    <p>@rule.BaselineSummary</p>
+                    <div class="rule-caveat"><strong>Important conditions</strong><small>@rule.ConditionsAndCaveats</small></div>
+                    <div class="rule-source"><strong>@rule.LegalReference</strong><small>@rule.VersionLabel</small><a href="@rule.SourceUrl" target="_blank" rel="noopener noreferrer">Read source <span>↗</span></a></div>
+                </article>
+            }
+        </div>
+    </section>
+
+    <section class="rules-country-section">
+        <div class="section-heading"><div><p class="eyebrow">COUNTRY CODE ZA</p><h2>South Africa</h2></div><p>Basic Conditions of Employment Act and current constitutional framework.</p></div>
+        <div class="rules-grid">
+            @foreach (var rule in LeavePolicyCatalog.ForCountry("ZA"))
+            {
+                <article class="rule-card">
+                    <div class="rule-card-top"><span class="rule-type">@rule.LeaveType</span><span class="status-label status-review">Review required</span></div>
+                    <p>@rule.BaselineSummary</p>
+                    <div class="rule-caveat"><strong>Important conditions</strong><small>@rule.ConditionsAndCaveats</small></div>
+                    <div class="rule-source"><strong>@rule.LegalReference</strong><small>@rule.VersionLabel</small><a href="@rule.SourceUrl" target="_blank" rel="noopener noreferrer">Read source <span>↗</span></a></div>
+                </article>
+            }
+        </div>
+    </section>
+
+    <section class="panel" style="margin-top:24px">
+        <div class="panel-heading"><div><p class="eyebrow">NEXT SAFETY GATE</p><h2>Before these rules affect a balance</h2></div><span class="panel-icon">✓</span></div>
+        <ul class="rule-checklist">
+            <li>Confirm the employee's country, sector, ordinary work pattern and coverage.</li>
+            <li>Check the effective date and any later amendment, judgment, wage order or sectoral determination.</li>
+            <li>Compare the statutory minimum with the signed contract and collective agreement.</li>
+            <li>Have a qualified reviewer approve a versioned policy and its test cases.</li>
+            <li>Only then enable accruals or ledger movements for that policy version.</li>
+        </ul>
+    </section>
+</div>

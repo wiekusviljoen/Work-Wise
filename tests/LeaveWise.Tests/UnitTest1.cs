@@ -49,3 +49,31 @@ public sealed class LeaveCalculatorTests
         Assert.Contains("closing balance 11", result.Explanation);
     }
 }
+
+public sealed class LeavePolicyCatalogTests
+{
+    [Fact]
+    public void CatalogContainsBothCountriesAndEveryEntryRequiresLegalReview()
+    {
+        Assert.Contains(LeavePolicyCatalog.All, x => x.CountryCode == "NA");
+        Assert.Contains(LeavePolicyCatalog.All, x => x.CountryCode == "ZA");
+        Assert.All(LeavePolicyCatalog.All, x => Assert.True(x.RequiresLegalReview));
+        Assert.All(LeavePolicyCatalog.All, x => Assert.False(string.IsNullOrWhiteSpace(x.SourceUrl)));
+    }
+
+    [Fact]
+    public void NamibiaCatalogDistinguishesCompassionateLeaveFromSouthAfricanFamilyResponsibilityLeave()
+    {
+        Assert.Contains(LeavePolicyCatalog.ForCountry("NA"), x => x.LeaveType == "Compassionate leave");
+        Assert.Contains(LeavePolicyCatalog.ForCountry("ZA"), x => x.LeaveType == "Family responsibility leave");
+    }
+
+    [Fact]
+    public void SouthAfricanParentalLeaveCatalogReferencesConstitutionalCourtInterimFramework()
+    {
+        var rule = Assert.Single(LeavePolicyCatalog.ForCountry("ZA"), x => x.LeaveType == "Parental leave");
+        Assert.Contains("2025", rule.LegalReference);
+        Assert.Contains("interim", rule.BaselineSummary, StringComparison.OrdinalIgnoreCase);
+        Assert.True(rule.RequiresLegalReview);
+    }
+}
