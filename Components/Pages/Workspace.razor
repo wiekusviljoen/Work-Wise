@@ -1,0 +1,151 @@
+@page "/workspace"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using Microsoft.EntityFrameworkCore
+@using LeaveWise.Data
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject NavigationManager Navigation
+
+<PageTitle>Employer workspace | LeaveWise</PageTitle>
+<div class="page-wrap">
+    <div class="page-title-row">
+        <div><p class="eyebrow">YOUR COMPANY, YOUR RECORDS</p><h1>Employer workspace</h1><p class="page-intro">Create a private company workspace. Membership records are tied to your signed-in account.</p></div>
+        <span class="demo-badge">EARLY ACCESS</span>
+    </div>
+    @if (!string.IsNullOrWhiteSpace(message))
+    {
+        <div class="notice-banner"><span class="notice-symbol">i</span><div><strong>@message</strong><p>@messageDetail</p></div></div>
+    }
+    @if (isLoading)
+    {
+        <section class="panel"><p>Loading your workspace…</p></section>
+    }
+    else
+    {
+        <div class="workspace-grid">
+            <section class="panel">
+                <div class="panel-heading"><div><p class="eyebrow">NEW ORGANIZATION</p><h2>Create a company workspace</h2></div><span class="panel-icon">＋</span></div>
+                <EditForm Model="input" OnValidSubmit="CreateWorkspace">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary class="text-danger" />
+                    <div class="form-field"><label for="org-name">Company or employer name</label><InputText id="org-name" class="form-control" @bind-Value="input.Name" maxlength="160" placeholder="e.g. Example Trading (Pty) Ltd" /><ValidationMessage For="@(() => input.Name)" /></div>
+                    <div class="form-field"><label for="country">Primary country</label><InputSelect id="country" class="form-control" @bind-Value="input.CountryCode"><option value="NA">Namibia</option><option value="ZA">South Africa</option></InputSelect></div>
+                    <button class="button-primary button-wide" type="submit" disabled="@isSaving">@((isSaving ? "Creating…" : "Create workspace")) <span>→</span></button>
+                    <p class="form-footnote">You will be recorded as the workspace owner. Staff invitations and payroll integrations are not enabled yet.</p>
+                </EditForm>
+            </section>
+            <section class="panel">
+                <div class="panel-heading"><div><p class="eyebrow">YOUR MEMBERSHIPS</p><h2>Available workspaces</h2></div><span class="count-chip">@memberships.Count</span></div>
+                @if (memberships.Count == 0)
+                {
+                    <div class="empty-state"><span class="empty-icon">⌂</span><strong>No workspace yet</strong><p>Create an organization to start setting up employment records.</p></div>
+                }
+                else
+                {
+                    @foreach (var membership in memberships)
+                    {
+                        <div class="workspace-item"><div class="workspace-symbol">⌂</div><div class="workspace-item-main"><strong>@membership.Organization.Name</strong><small>@(membership.Organization.CountryCode == "NA" ? "Namibia" : "South Africa") · @membership.Role</small></div><span class="status-label status-review">Active</span></div>
+                    }
+                }
+            </section>
+        </div>
+    }
+</div>
+
+@code {
+    private readonly WorkspaceInput input = new();
+    private readonly List<OrganizationMembership> memberships = new();
+    private string? userId;
+    private bool isLoading = true;
+    private bool isSaving;
+    private string? message;
+    private string? messageDetail;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        userId = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            Navigation.NavigateTo("Account/Login", forceLoad: true);
+            return;
+        }
+        await LoadMemberships();
+        isLoading = false;
+    }
+
+    private async Task LoadMemberships()
+    {
+        memberships.Clear();
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var rows = await db.OrganizationMemberships
+            .Include(x => x.Organization)
+            .Where(x => x.UserId == userId && x.IsActive)
+            .OrderBy(x => x.Organization.Name)
+            .ToListAsync();
+        memberships.AddRange(rows);
+    }
+
+    private async Task CreateWorkspace()
+    {
+        if (isSaving || string.IsNullOrWhiteSpace(userId)) return;
+        isSaving = true;
+        message = null;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var name = input.Name.Trim();
+            var country = input.CountryCode.Trim().ToUpperInvariant();
+            if (country is not ("NA" or "ZA"))
+            {
+                message = "Choose a supported country.";
+                messageDetail = "The first release supports Namibia and South Africa only.";
+                return;
+            }
+
+            var duplicate = await db.OrganizationMemberships
+                .Include(x => x.Organization)
+                .AnyAsync(x => x.UserId == userId && x.IsActive && x.Organization.Name.ToLower() == name.ToLower() && x.Organization.CountryCode == country);
+            if (duplicate)
+            {
+                message = "You already belong to a workspace with that name.";
+                messageDetail = "Choose the existing workspace or use a different name.";
+                return;
+            }
+
+            var organization = new Organization { Name = name, CountryCode = country };
+            db.Organizations.Add(organization);
+            db.OrganizationMemberships.Add(new OrganizationMembership
+            {
+                Organization = organization,
+                UserId = userId,
+                Role = "Owner",
+                IsActive = true
+            });
+            await db.SaveChangesAsync();
+            await LoadMemberships();
+            input.Name = "";
+            message = "Workspace created.";
+            messageDetail = "Your account is now recorded as the owner. Staff records and invitations are the next development step.";
+        }
+        catch (DbUpdateException)
+        {
+            message = "The workspace could not be saved.";
+            messageDetail = "Please try again. No employee information was changed.";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private sealed class WorkspaceInput
+    {
+        [Required, StringLength(160, MinimumLength = 2)]
+        public string Name { get; set; } = "";
+        [Required, RegularExpression("NA|ZA")]
+        public string CountryCode { get; set; } = "NA";
+    }
+}
