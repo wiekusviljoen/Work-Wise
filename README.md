@@ -1,6 +1,6 @@
-# Work-Wise
+# LeaveWise
 
-Work-Wise (working product name: LeaveWise) is an employment leave and benefits assistant for Namibia and South Africa. The current early-access build focuses on company workspaces, employee employment records, persistent leave requests, owner approvals and an audit trail.
+LeaveWise is the product name for this employment leave and benefits assistant for Namibia and South Africa. The source repository remains `Work-Wise` on GitHub. The current early-access build focuses on company workspaces, employee employment records, persistent leave requests, owner approvals and an audit trail.
 
 ## Current implementation
 - ASP.NET Core Blazor Web App on .NET 10 with ASP.NET Core Identity.
