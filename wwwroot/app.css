@@ -111,19 +111,27 @@ html,body{background:#f3f6fa;color:#14283e}
 
 
 
-/* Mobile navigation: compact dropdown instead of a crowded grid. */
+/* Mobile navigation: top-right dropdown menu. */
 .mobile-menu-toggle{display:none}
+.mobile-brand-row{display:block}
 @media(max-width:760px){
-  .sidebar{padding:12px 14px 14px}
-  .brand-block{padding:3px 3px 12px}
-  .mobile-menu-toggle{display:flex;width:100%;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border:1px solid #2c4962;border-radius:11px;background:#193650;color:#f3f7fb;font-size:.9rem;font-weight:700;text-align:left;cursor:pointer}
-  .mobile-menu-chevron{width:9px;height:9px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg);transition:transform .18s ease;margin-right:3px;margin-top:-4px}
+  .sidebar{position:relative;z-index:30;overflow:visible;padding:10px 14px 11px}
+  .mobile-brand-row{display:flex;align-items:center;justify-content:space-between;gap:12px;position:relative}
+  .brand-block{padding:3px 0!important;min-width:0}
+  .brand-lockup{gap:9px;font-size:1.05rem}
+  .brand-lockup small{font-size:.49rem;letter-spacing:.08em}
+  .brand-mark{width:40px;height:40px;flex-shrink:0}
+  .nav-caption,.sidebar-bottom,.app-topbar{display:none}
+  .mobile-menu-toggle{display:inline-flex;flex:0 0 auto;align-items:center;justify-content:center;gap:10px;min-height:42px;padding:0 13px;border:1px solid #35516a;border-radius:10px;background:#193650;color:#f3f7fb;font-size:.84rem;font-weight:700;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+  .mobile-menu-toggle:focus-visible{outline:3px solid #56c99a;outline-offset:2px}
+  .mobile-menu-chevron{width:8px;height:8px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg);transition:transform .18s ease;margin-top:-4px}
   .mobile-menu-chevron.is-open{transform:rotate(225deg);margin-top:5px}
-  .app-nav{display:none;grid-template-columns:1fr;gap:3px;margin-top:8px;padding:7px;background:#10283f;border:1px solid #29465f;border-radius:12px}
-  .app-nav.mobile-nav-open{display:grid}
-  .app-nav .nav-link{display:flex;flex-direction:row;align-items:center;justify-content:flex-start;min-height:0;padding:12px 13px;font-size:.86rem;line-height:1.35;text-align:left;white-space:normal;border-radius:8px}
+  .app-nav{display:none!important;position:absolute;top:calc(100% + 8px);right:14px;left:auto;width:min(310px,calc(100vw - 28px));max-height:min(72vh,520px);overflow-y:auto;overscroll-behavior:contain;grid-template-columns:1fr;gap:3px;margin:0;padding:7px;background:#10283f;border:1px solid #29465f;border-radius:12px;box-shadow:0 14px 36px #07172655;z-index:50}
+  .app-nav.mobile-nav-open{display:grid!important}
+  .app-nav .nav-link{display:flex;flex-direction:row;align-items:center;justify-content:flex-start;min-height:44px;padding:12px 13px;font-size:.87rem;line-height:1.35;text-align:left;white-space:normal;border-radius:8px;touch-action:manipulation}
+  .app-main{margin-left:0;min-width:0}
+  .main-content{padding:15px 13px 23px}
 }
-
 
 /* Replace text abbreviations with clean, consistent line icons. */
 .ww-tool-icon svg,.ww-float-icon svg,.ww-bottom-symbol svg{width:58%;height:58%;display:block;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
