@@ -8,7 +8,7 @@
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject NavigationManager Navigation
 
-<PageTitle>Employer workspace | LeaveWise</PageTitle>
+<PageTitle>Employer workspace | Work-Wise</PageTitle>
 <div class="page-wrap">
     <div class="page-title-row">
         <div><p class="eyebrow">YOUR COMPANY, YOUR RECORDS</p><h1>Employer workspace</h1><p class="page-intro">Manage your company workspace and set up employment records.</p></div>
@@ -55,7 +55,7 @@
         {
             <section class="panel" style="margin-top:24px">
                 <div class="panel-heading"><div><p class="eyebrow">EMPLOYMENT SETUP</p><h2>Add an employee record</h2></div><span class="panel-icon">＋</span></div>
-                <p class="page-intro">Add the employee's name and email address. When they sign in with that same confirmed email, LeaveWise can link the record to their account. Do not enter sensitive medical details here.</p>
+                <p class="page-intro">Add the employee's name and email address. When they sign in with that same confirmed email, Work-Wise can link the record to their account. Do not enter sensitive medical details here.</p>
                 <EditForm Model="employeeInput" OnValidSubmit="CreateEmployment">
                     <DataAnnotationsValidator /><ValidationSummary class="text-danger" />
                     <div class="form-row">
