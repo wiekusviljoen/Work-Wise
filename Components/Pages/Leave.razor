@@ -30,7 +30,7 @@
     else if (employments.Count == 0)
     {
         <section class="panel empty-state">
-            <span class="empty-icon">?</span>
+            <span class="empty-icon">INFO</span>
             <strong>No linked employment record yet</strong>
             <p>Ask your employer to add your employment record in their Work-Wise workspace using the email address on your confirmed account. It will appear here after you sign in again.</p>
             <p class="form-footnote">Leave balances remain unavailable until your contract and applicable policy have been reviewed.</p>
@@ -44,7 +44,7 @@
         </div>
         <div class="content-two-col">
             <section class="panel">
-                <div class="panel-heading"><div><p class="eyebrow">QUICK ACTION</p><h2>Request time off</h2></div><span class="panel-icon">?</span></div>
+                <div class="panel-heading"><div><p class="eyebrow">QUICK ACTION</p><h2>Request time off</h2></div><span class="panel-icon">INFO</span></div>
                 <EditForm Model="request" OnValidSubmit="SubmitRequest">
                     <DataAnnotationsValidator />
                     <ValidationSummary class="text-danger" />
@@ -53,7 +53,7 @@
                         <InputSelect id="employment" class="form-control" @bind-Value="request.EmploymentRecordId">
                             @foreach (var employment in employments)
                             {
-                                <option value="@employment.Id">@employment.Organization.Name — @employment.EmployeeName</option>
+                                <option value="@employment.Id">@employment.Organization.Name - @employment.EmployeeName</option>
                             }
                         </InputSelect>
                     </div>
@@ -71,7 +71,7 @@
                 <div class="panel-heading"><div><p class="eyebrow">RECENT ACTIVITY</p><h2>Request history</h2></div><span class="count-chip">@requests.Count</span></div>
                 @if (requests.Count == 0)
                 {
-                    <div class="empty-state"><span class="empty-icon">?</span><strong>No requests yet</strong><p>Your saved requests will appear here.</p></div>
+                    <div class="empty-state"><span class="empty-icon">INFO</span><strong>No requests yet</strong><p>Your saved requests will appear here.</p></div>
                 }
                 else
                 {
@@ -80,7 +80,7 @@
                         {
                             <div class="request-item">
                                 <span class="request-date">@item.StartDate.ToString("dd")<small>@item.StartDate.ToString("MMM")</small></span>
-                                <div class="request-detail"><strong>@item.LeaveType</strong><small>@item.StartDate.ToString("dd MMM") – @item.EndDate.ToString("dd MMM yyyy")</small><small>@item.OrganizationName</small>
+                                <div class="request-detail"><strong>@item.LeaveType</strong><small>@item.StartDate.ToString("dd MMM") - @item.EndDate.ToString("dd MMM yyyy")</small><small>@item.OrganizationName</small>
                                     @if (!string.IsNullOrWhiteSpace(item.EmployeeNote))
                                     {
                                         <small>@item.EmployeeNote</small>

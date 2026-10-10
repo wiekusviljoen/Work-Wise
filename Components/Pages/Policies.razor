@@ -28,13 +28,13 @@
     }
     else if (organizations.Count == 0)
     {
-        <section class="panel empty-state"><span class="empty-icon">?</span><strong>No employer workspace found</strong><p>Create a workspace and add employment records before configuring leave policies.</p><a class="button-primary" href="workspace">Open employer workspace →</a></section>
+        <section class="panel empty-state"><span class="empty-icon">INFO</span><strong>No employer workspace found</strong><p>Create a workspace and add employment records before configuring leave policies.</p><a class="button-primary" href="workspace">Open employer workspace →</a></section>
     }
     else
     {
         <div class="content-two-col">
             <section class="panel">
-                <div class="panel-heading"><div><p class="eyebrow">POLICY BUILDER</p><h2>Create a draft policy</h2></div><span class="panel-icon">?</span></div>
+                <div class="panel-heading"><div><p class="eyebrow">POLICY BUILDER</p><h2>Create a draft policy</h2></div><span class="panel-icon">INFO</span></div>
                 <EditForm Model="input" OnValidSubmit="CreateDraft">
                     <DataAnnotationsValidator /><ValidationSummary class="text-danger" />
                     <div class="form-field"><label for="policy-org">Organization</label><InputSelect id="policy-org" class="form-control" @bind-Value="input.OrganizationId">
@@ -58,7 +58,7 @@
                 <div class="panel-heading"><div><p class="eyebrow">POLICY REGISTER</p><h2>Versions & status</h2></div><span class="count-chip">@policies.Count</span></div>
                 @if (policies.Count == 0)
                 {
-                    <div class="empty-state"><span class="empty-icon">?</span><strong>No policies configured</strong><p>Create a draft, verify its basis, then activate it when ready.</p></div>
+                    <div class="empty-state"><span class="empty-icon">INFO</span><strong>No policies configured</strong><p>Create a draft, verify its basis, then activate it when ready.</p></div>
                 }
                 else
                 {
@@ -178,7 +178,7 @@
         if (input.EntitlementDaysPerCycle <= 0 || input.EntitlementDaysPerCycle > 365 || input.CycleMonths is < 1 or > 60)
         {
             message = "The policy values are outside the supported range.";
-            messageDetail = "Entitlement must be above zero and no more than 365 days; cycle length must be 1–60 months.";
+            messageDetail = "Entitlement must be above zero and no more than 365 days; cycle length must be 1-60 months.";
             return;
         }
         if (input.ReviewReference.Trim().Length < 8)

@@ -23,11 +23,11 @@
     }
     else if (ownedOrganizationIds.Count == 0)
     {
-        <section class="panel empty-state"><span class="empty-icon">?</span><strong>No employer workspace access</strong><p>Create a workspace or ask its owner to grant you an appropriate role. Only workspace owners can review requests in this early-access version.</p></section>
+        <section class="panel empty-state"><span class="empty-icon">INFO</span><strong>No employer workspace access</strong><p>Create a workspace or ask its owner to grant you an appropriate role. Only workspace owners can review requests in this early-access version.</p></section>
     }
     else if (requests.Count == 0)
     {
-        <section class="panel empty-state"><span class="empty-icon">?</span><strong>You're all caught up</strong><p>There are no pending leave requests in your workspaces.</p></section>
+        <section class="panel empty-state"><span class="empty-icon">INFO</span><strong>You're all caught up</strong><p>There are no pending leave requests in your workspaces.</p></section>
     }
     else
     {
@@ -39,9 +39,9 @@
                     <div class="approval-main">
                         <div class="request-date">@item.StartDate.ToString("dd")<small>@item.StartDate.ToString("MMM")</small></div>
                         <div class="request-detail">
-                            <strong>@item.EmployeeName — @item.LeaveType</strong>
+                            <strong>@item.EmployeeName - @item.LeaveType</strong>
                             <small>@item.OrganizationName</small>
-                            <small>@item.StartDate.ToString("dd MMM yyyy") – @item.EndDate.ToString("dd MMM yyyy") · @item.ScheduledWorkdays scheduled workday(s)</small>
+                            <small>@item.StartDate.ToString("dd MMM yyyy") - @item.EndDate.ToString("dd MMM yyyy") · @item.ScheduledWorkdays scheduled workday(s)</small>
                             @if (!string.IsNullOrWhiteSpace(item.EmployeeNote)) { <p>@item.EmployeeNote</p> }
                             <small>Submitted @item.RequestedUtc.ToLocalTime().ToString("dd MMM yyyy, HH:mm")</small>
                         </div>
