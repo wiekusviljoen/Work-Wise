@@ -27,7 +27,7 @@
         <div class="workspace-grid">
             <section class="panel">
                 <div class="panel-heading"><div><p class="eyebrow">NEW ORGANIZATION</p><h2>Create a company workspace</h2></div><span class="panel-icon">INFO</span></div>
-                <EditForm Model="input" OnValidSubmit="CreateWorkspace">
+                <EditForm Model="input" OnValidSubmit="CreateWorkspace" FormName="CreateWorkspace">
                     <DataAnnotationsValidator /><ValidationSummary class="text-danger" />
                     <div class="form-field"><label for="org-name">Company or employer name</label><InputText id="org-name" class="form-control" @bind-Value="input.Name" maxlength="160" placeholder="e.g. Example Trading (Pty) Ltd" /><ValidationMessage For="@(() => input.Name)" /></div>
                     <div class="form-field"><label for="country">Primary country</label><InputSelect id="country" class="form-control" @bind-Value="input.CountryCode"><option value="NA">Namibia</option><option value="ZA">South Africa</option></InputSelect></div>
@@ -56,7 +56,7 @@
             <section class="panel" style="margin-top:24px">
                 <div class="panel-heading"><div><p class="eyebrow">EMPLOYMENT SETUP</p><h2>Add an employee record</h2></div><span class="panel-icon">INFO</span></div>
                 <p class="page-intro">Add the employee's name and email address. When they sign in with that same confirmed email, Work-Wise can link the record to their account. Do not enter sensitive medical details here.</p>
-                <EditForm Model="employeeInput" OnValidSubmit="CreateEmployment">
+                <EditForm Model="employeeInput" OnValidSubmit="CreateEmployment" FormName="CreateEmployment">
                     <DataAnnotationsValidator /><ValidationSummary class="text-danger" />
                     <div class="form-row">
                         <div class="form-field"><label for="employee-org">Company</label><InputSelect id="employee-org" class="form-control" @bind-Value="employeeInput.OrganizationId">
