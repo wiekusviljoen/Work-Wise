@@ -135,3 +135,26 @@ public sealed class AuditEvent
     public DateTime OccurredUtc { get; set; } = DateTime.UtcNow;
     public string? DetailsJson { get; set; }
 }
+
+
+/// <summary>Employer-configured, versioned policy. Activation is an employer attestation, not legal advice or independent legal certification.</summary>
+public sealed class OrganizationLeavePolicy
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid OrganizationId { get; set; }
+    public Organization Organization { get; set; } = null!;
+    [MaxLength(48)] public string LeaveType { get; set; } = "Annual leave";
+    public int Version { get; set; } = 1;
+    public DateOnly EffectiveFrom { get; set; }
+    public DateOnly? EffectiveTo { get; set; }
+    public int CycleMonths { get; set; } = 12;
+    public decimal EntitlementDaysPerCycle { get; set; }
+    public bool AllowNegativeBalance { get; set; }
+    [MaxLength(24)] public string AccrualMethod { get; set; } = "MonthlyFixed";
+    [MaxLength(32)] public string Status { get; set; } = "Draft";
+    [MaxLength(1000)] public string ReviewReference { get; set; } = "";
+    [MaxLength(450)] public string CreatedByUserId { get; set; } = "";
+    public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
+    [MaxLength(450)] public string? ActivatedByUserId { get; set; }
+    public DateTime? ActivatedUtc { get; set; }
+}

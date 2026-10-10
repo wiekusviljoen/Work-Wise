@@ -1,0 +1,309 @@
+@page "/policies"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using Microsoft.EntityFrameworkCore
+@using LeaveWise.Data
+@using LeaveWise.Domain
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+
+<PageTitle>Leave policies & balances | Work-Wise</PageTitle>
+<div class="page-wrap">
+    <div class="page-title-row">
+        <div><p class="eyebrow">EMPLOYER CONTROLS</p><h1>Leave policies & balances</h1><p class="page-intro">Configure a versioned policy only after checking it against the employee's contract and the applicable law.</p></div>
+        <span class="demo-badge">EARLY ACCESS</span>
+    </div>
+    <div class="notice-banner">
+        <span class="notice-symbol">!</span>
+        <div><strong>Policy activation is not legal certification</strong><p>Work-Wise does not decide statutory entitlements. An active policy is an employer-configured rule; independently verify the source, sector, work pattern, contract and effective dates. This first version supports fixed monthly accrual only. It does not support day-worked or hour-worked statutory formulas yet.</p></div>
+    </div>
+    @if (!string.IsNullOrWhiteSpace(message))
+    {
+        <div class="notice-banner"><span class="notice-symbol">i</span><div><strong>@message</strong><p>@messageDetail</p></div></div>
+    }
+    @if (isLoading)
+    {
+        <section class="panel"><p>Loading policies and balances…</p></section>
+    }
+    else if (organizations.Count == 0)
+    {
+        <section class="panel empty-state"><span class="empty-icon">⌂</span><strong>No employer workspace found</strong><p>Create a workspace and add employment records before configuring leave policies.</p><a class="button-primary" href="workspace">Open employer workspace →</a></section>
+    }
+    else
+    {
+        <div class="content-two-col">
+            <section class="panel">
+                <div class="panel-heading"><div><p class="eyebrow">POLICY BUILDER</p><h2>Create a draft policy</h2></div><span class="panel-icon">＋</span></div>
+                <EditForm Model="input" OnValidSubmit="CreateDraft">
+                    <DataAnnotationsValidator /><ValidationSummary class="text-danger" />
+                    <div class="form-field"><label for="policy-org">Organization</label><InputSelect id="policy-org" class="form-control" @bind-Value="input.OrganizationId">
+                        @foreach (var organization in organizations) { <option value="@organization.Id">@organization.Name (@organization.CountryCode)</option> }
+                    </InputSelect></div>
+                    <div class="form-field"><label for="policy-type">Leave type</label><InputSelect id="policy-type" class="form-control" @bind-Value="input.LeaveType">
+                        <option>Annual leave</option><option>Sick leave</option><option>Family responsibility leave</option><option>Compassionate leave</option><option>Maternity leave</option><option>Parental leave</option><option>Unpaid leave</option><option>Other</option>
+                    </InputSelect></div>
+                    <div class="form-row">
+                        <div class="form-field"><label for="policy-days">Entitlement days per cycle</label><InputNumber id="policy-days" class="form-control" @bind-Value="input.EntitlementDaysPerCycle" min="0.01" max="365" step="0.25" /><ValidationMessage For="@(() => input.EntitlementDaysPerCycle)" /></div>
+                        <div class="form-field"><label for="policy-cycle">Cycle length (months)</label><InputNumber id="policy-cycle" class="form-control" @bind-Value="input.CycleMonths" min="1" max="60" /><ValidationMessage For="@(() => input.CycleMonths)" /></div>
+                    </div>
+                    <div class="form-field"><label for="policy-effective">Effective from (first day of a future month)</label><InputDate id="policy-effective" class="form-control" @bind-Value="input.EffectiveFrom" /><ValidationMessage For="@(() => input.EffectiveFrom)" /></div>
+                    <div class="form-field"><label class="policy-attestation"><InputCheckbox @bind-Value="input.AllowNegativeBalance" /> Permit negative balances for this leave type (only if the reviewed policy allows it).</label></div>
+                    <div class="form-field"><label for="policy-source">Reviewed source / contract reference</label><InputTextArea id="policy-source" class="form-control" @bind-Value="input.ReviewReference" maxlength="1000" placeholder="e.g. contract clause and legal review reference" /><ValidationMessage For="@(() => input.ReviewReference)" /></div>
+                    <button class="button-primary button-wide" type="submit" disabled="@isSaving">@(isSaving ? "Saving draft…" : "Save draft policy") <span>→</span></button>
+                    <p class="form-footnote">Saving a draft does not create accruals or change balances. Only an activated policy does that.</p>
+                </EditForm>
+            </section>
+            <section class="panel">
+                <div class="panel-heading"><div><p class="eyebrow">POLICY REGISTER</p><h2>Versions & status</h2></div><span class="count-chip">@policies.Count</span></div>
+                @if (policies.Count == 0)
+                {
+                    <div class="empty-state"><span class="empty-icon">§</span><strong>No policies configured</strong><p>Create a draft, verify its basis, then activate it when ready.</p></div>
+                }
+                else
+                {
+                    @foreach (var policy in policies)
+                    {
+                        <div class="policy-item">
+                            <div class="policy-item-head"><div><strong>@policy.LeaveType</strong><small>@policy.OrganizationName · v@policy.Version</small></div><span class="status-label @(policy.Status == "Active" && policy.EffectiveFrom > DateOnly.FromDateTime(DateTime.Today) ? "status-pending" : policy.Status == "Active" ? "status-approved" : policy.Status == "Draft" ? "status-pending" : "status-review")">@(policy.Status == "Active" && policy.EffectiveFrom > DateOnly.FromDateTime(DateTime.Today) ? "Scheduled" : policy.Status)</span></div>
+                            <p>@policy.EntitlementDaysPerCycle.ToString("0.####") days / @policy.CycleMonths months · from @policy.EffectiveFrom.ToString("dd MMM yyyy")</p>
+                            @if (policy.AllowNegativeBalance) { <small class="policy-reference">Negative balance permitted by this policy</small> }
+                            <small class="policy-reference">@policy.ReviewReference</small>
+                            @if (policy.Status == "Draft")
+                            {
+                                <div class="policy-activate">
+                                    <label class="policy-attestation"><InputCheckbox @bind-Value="activationConfirmations[policy.Id]" /> I have independently checked this policy against applicable law, the contract and work schedule.</label>
+                                    <button class="button-primary" type="button" disabled="@isSaving" @onclick="() => ActivatePolicy(policy.Id)">Activate policy</button>
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+            </section>
+        </div>
+
+        <section class="panel" style="margin-top:8px">
+            <div class="panel-heading"><div><p class="eyebrow">LEDGER-BASED BALANCES</p><h2>Employee balances today</h2></div><span class="count-chip">@balanceRows.Count</span></div>
+            @if (balanceRows.Count == 0)
+            {
+                <div class="empty-state"><strong>No balances to show yet</strong><p>Add employment records and activate reviewed policies. Monthly accrual entries are posted idempotently from the policy's effective date.</p></div>
+            }
+            else
+            {
+                <div class="balance-table">
+                    @foreach (var row in balanceRows)
+                    {
+                        <div class="balance-table-row">
+                            <div><strong>@row.EmployeeName</strong><small>@row.OrganizationName</small></div>
+                            <div><span>@row.LeaveType</span><strong>@row.Balance.ToString("0.####") days</strong><small>As of @DateOnly.FromDateTime(DateTime.Today).ToString("dd MMM yyyy")</small></div>
+                        </div>
+                    }
+                </div>
+            }
+            <p class="form-footnote">Balances are reconstructed from ledger entries, not stored totals. Approved requests create usage entries. Negative balances are allowed only where the active employer policy explicitly permits them.</p>
+        </section>
+    }
+</div>
+
+@code {
+    private string? userId;
+    private bool isLoading = true;
+    private bool isSaving;
+    private string? message;
+    private string? messageDetail;
+    private readonly PolicyInput input = new();
+    private readonly List<OrganizationOption> organizations = new();
+    private readonly List<PolicyView> policies = new();
+    private readonly List<BalanceView> balanceRows = new();
+    private readonly Dictionary<Guid, bool> activationConfirmations = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        userId = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(userId)) { isLoading = false; return; }
+        await LoadData();
+        isLoading = false;
+    }
+
+    private async Task LoadData()
+    {
+        organizations.Clear(); policies.Clear(); balanceRows.Clear(); activationConfirmations.Clear();
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var memberships = await db.OrganizationMemberships.Include(x => x.Organization)
+            .Where(x => x.UserId == userId && x.IsActive && x.Role == "Owner")
+            .OrderBy(x => x.Organization.Name).ToListAsync();
+        organizations.AddRange(memberships.Select(x => new OrganizationOption(x.OrganizationId, x.Organization.Name, x.Organization.CountryCode)));
+        var orgIds = organizations.Select(x => x.Id).ToArray();
+        if (orgIds.Length == 0) return;
+
+        var policyRows = await db.OrganizationLeavePolicies.Include(x => x.Organization)
+            .Where(x => orgIds.Contains(x.OrganizationId))
+            .OrderBy(x => x.Organization.Name).ThenBy(x => x.LeaveType).ThenByDescending(x => x.Version)
+            .ToListAsync();
+        policies.AddRange(policyRows.Select(x => new PolicyView(x.Id, x.OrganizationId, x.Organization.Name, x.LeaveType, x.Version, x.EffectiveFrom, x.CycleMonths, x.EntitlementDaysPerCycle, x.Status, x.ReviewReference, x.AllowNegativeBalance)));
+        foreach (var policy in policies.Where(x => x.Status == "Draft")) activationConfirmations[policy.Id] = false;
+        if (input.OrganizationId == Guid.Empty && organizations.Count > 0) input.OrganizationId = organizations[0].Id;
+
+        var employees = await db.EmploymentRecords.Include(x => x.Organization)
+            .Where(x => orgIds.Contains(x.OrganizationId) && x.Status == "Active")
+            .OrderBy(x => x.Organization.Name).ThenBy(x => x.EmployeeName).ToListAsync();
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        foreach (var employee in employees)
+            await LeaveLedgerService.SyncAccrualsAsync(db, employee, today, userId!);
+
+        var activePolicies = policyRows.Where(x => (x.Status == "Active" || x.Status == "Superseded") && x.EffectiveFrom <= today && (!x.EffectiveTo.HasValue || x.EffectiveTo.Value >= today)).GroupBy(x => new { x.OrganizationId, x.LeaveType }).Select(g => g.OrderByDescending(x => x.EffectiveFrom).First()).ToList();
+        var ledger = await db.LeaveLedger.Where(x => orgIds.Contains(x.EmploymentRecord.OrganizationId) && x.EffectiveDate <= today)
+            .Select(x => new { x.EmploymentRecordId, x.LeaveType, x.DayDelta }).ToListAsync();
+        foreach (var employee in employees)
+        {
+            foreach (var policy in activePolicies.Where(x => x.OrganizationId == employee.OrganizationId))
+            {
+                var balance = ledger.Where(x => x.EmploymentRecordId == employee.Id && x.LeaveType == policy.LeaveType).Sum(x => x.DayDelta);
+                balanceRows.Add(new BalanceView(employee.EmployeeName, employee.Organization.Name, policy.LeaveType, balance));
+            }
+        }
+    }
+
+    private async Task CreateDraft()
+    {
+        if (isSaving || string.IsNullOrWhiteSpace(userId)) return;
+        message = null;
+        if (input.EffectiveFrom.Day != 1 || input.EffectiveFrom <= DateOnly.FromDateTime(DateTime.Today))
+        {
+            message = "Choose the first day of a future month.";
+            messageDetail = "This avoids backdated or partial-month accrual when policy versions change.";
+            return;
+        }
+        if (input.EntitlementDaysPerCycle <= 0 || input.EntitlementDaysPerCycle > 365 || input.CycleMonths is < 1 or > 60)
+        {
+            message = "The policy values are outside the supported range.";
+            messageDetail = "Entitlement must be above zero and no more than 365 days; cycle length must be 1–60 months.";
+            return;
+        }
+        if (input.ReviewReference.Trim().Length < 8)
+        {
+            message = "Add a meaningful source or contract reference.";
+            messageDetail = "Drafts need a traceable reference before they can be activated.";
+            return;
+        }
+        isSaving = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var isOwner = await db.OrganizationMemberships.AnyAsync(x => x.OrganizationId == input.OrganizationId && x.UserId == userId && x.IsActive && x.Role == "Owner");
+            if (!isOwner) { message = "You are not authorized to manage that organization's policies."; messageDetail = "Only an active organization owner can create a policy."; return; }
+            var duplicateDraft = await db.OrganizationLeavePolicies.AnyAsync(x => x.OrganizationId == input.OrganizationId && x.LeaveType == input.LeaveType && x.Status == "Draft" && x.EffectiveFrom == input.EffectiveFrom);
+            if (duplicateDraft) { message = "A draft already exists for that leave type and effective date."; messageDetail = "Edit or activate the existing draft instead of creating a duplicate."; return; }
+            var latestVersion = await db.OrganizationLeavePolicies.Where(x => x.OrganizationId == input.OrganizationId && x.LeaveType == input.LeaveType).Select(x => (int?)x.Version).MaxAsync() ?? 0;
+            var draft = new OrganizationLeavePolicy
+            {
+                OrganizationId = input.OrganizationId,
+                LeaveType = input.LeaveType,
+                Version = latestVersion + 1,
+                EffectiveFrom = input.EffectiveFrom,
+                CycleMonths = input.CycleMonths,
+                EntitlementDaysPerCycle = decimal.Round(input.EntitlementDaysPerCycle, 4, MidpointRounding.AwayFromZero),
+                AllowNegativeBalance = input.AllowNegativeBalance,
+                AccrualMethod = "MonthlyFixed",
+                Status = "Draft",
+                ReviewReference = input.ReviewReference.Trim(),
+                CreatedByUserId = userId
+            };
+            db.OrganizationLeavePolicies.Add(draft);
+            db.AuditEvents.Add(new AuditEvent
+            {
+                OrganizationId = input.OrganizationId, ActorUserId = userId, Action = "LeavePolicyDraftCreated",
+                EntityType = "LeavePolicy", EntityId = draft.Id.ToString(),
+                DetailsJson = System.Text.Json.JsonSerializer.Serialize(new { input.LeaveType, input.EffectiveFrom, input.CycleMonths, input.EntitlementDaysPerCycle, input.AllowNegativeBalance })
+            });
+            await db.SaveChangesAsync();
+            message = "Draft policy saved.";
+            messageDetail = "It does not affect balances until an owner activates it after independent review.";
+            input.ReviewReference = "";
+            await LoadData();
+        }
+        catch (DbUpdateException)
+        {
+            message = "The draft could not be saved.";
+            messageDetail = "Check the policy values and try again.";
+        }
+        finally { isSaving = false; }
+    }
+
+    private async Task ActivatePolicy(Guid policyId)
+    {
+        if (isSaving || string.IsNullOrWhiteSpace(userId)) return;
+        if (!activationConfirmations.TryGetValue(policyId, out var confirmed) || !confirmed)
+        {
+            message = "Confirm the policy review first.";
+            messageDetail = "Activation requires the owner to attest that the source, contract and work schedule were independently checked.";
+            return;
+        }
+        isSaving = true;
+        message = null;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            await using var transaction = await db.Database.BeginTransactionAsync();
+            var policy = await db.OrganizationLeavePolicies.SingleOrDefaultAsync(x => x.Id == policyId && x.Status == "Draft");
+            if (policy is null) { message = "This draft is no longer available."; messageDetail = "Refresh the page and review the current policy register."; return; }
+            var isOwner = await db.OrganizationMemberships.AnyAsync(x => x.OrganizationId == policy.OrganizationId && x.UserId == userId && x.IsActive && x.Role == "Owner");
+            if (!isOwner) { message = "You are not authorized to activate this policy."; messageDetail = "Only an active organization owner can activate a policy."; return; }
+            if (policy.EffectiveFrom.Day != 1 || policy.EffectiveFrom <= DateOnly.FromDateTime(DateTime.Today))
+            {
+                message = "This policy's effective date is no longer in the future.";
+                messageDetail = "Create a new draft with the first day of a future month.";
+                return;
+            }
+            var previous = await db.OrganizationLeavePolicies
+                .Where(x => x.OrganizationId == policy.OrganizationId && x.LeaveType == policy.LeaveType && x.Status == "Active")
+                .ToListAsync();
+            if (previous.Any(x => x.EffectiveFrom >= policy.EffectiveFrom))
+            {
+                message = "The new policy version must start after the current version.";
+                messageDetail = "Choose a later first-of-month effective date.";
+                return;
+            }
+            var today = DateOnly.FromDateTime(DateTime.Today);
+            var employments = await db.EmploymentRecords
+                .Where(x => x.OrganizationId == policy.OrganizationId && x.Status == "Active").ToListAsync();
+            foreach (var old in previous)
+            {
+                old.EffectiveTo = policy.EffectiveFrom.AddDays(-1);
+                old.Status = "Superseded";
+                foreach (var employment in employments)
+                    await LeaveLedgerService.SyncAccrualsAsync(db, employment, today, userId);
+            }
+            policy.Status = "Active";
+            policy.ActivatedByUserId = userId;
+            policy.ActivatedUtc = DateTime.UtcNow;
+            db.AuditEvents.Add(new AuditEvent { OrganizationId = policy.OrganizationId, ActorUserId = userId, Action = "LeavePolicyActivated", EntityType = "LeavePolicy", EntityId = policy.Id.ToString(), DetailsJson = System.Text.Json.JsonSerializer.Serialize(new { policy.LeaveType, policy.Version, policy.EffectiveFrom, policy.EntitlementDaysPerCycle, policy.CycleMonths, policy.ReviewReference }) });
+            await db.SaveChangesAsync();
+            await transaction.CommitAsync();
+            message = "Policy activated.";
+            messageDetail = "It becomes effective on the selected date. Accruals are posted monthly and ledger entries are idempotent.";
+            await LoadData();
+        }
+        catch (DbUpdateException)
+        {
+            message = "The policy could not be activated.";
+            messageDetail = "No policy change was confirmed. Refresh the page and try again.";
+        }
+        finally { isSaving = false; }
+    }
+
+    private sealed class PolicyInput
+    {
+        [Required] public Guid OrganizationId { get; set; }
+        [Required, StringLength(48, MinimumLength = 2)] public string LeaveType { get; set; } = "Annual leave";
+        [Range(typeof(decimal), "0.01", "365")] public decimal EntitlementDaysPerCycle { get; set; } = 20m;
+        [Range(1, 60)] public int CycleMonths { get; set; } = 12;
+        [Required] public DateOnly EffectiveFrom { get; set; } = DateOnly.FromDateTime(new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1)).AddMonths(1);
+        public bool AllowNegativeBalance { get; set; }
+        [Required, StringLength(1000, MinimumLength = 8)] public string ReviewReference { get; set; } = "";
+    }
+    private sealed record OrganizationOption(Guid Id, string Name, string CountryCode);
+    private sealed record PolicyView(Guid Id, Guid OrganizationId, string OrganizationName, string LeaveType, int Version, DateOnly EffectiveFrom, int CycleMonths, decimal EntitlementDaysPerCycle, string Status, string ReviewReference, bool AllowNegativeBalance);
+    private sealed record BalanceView(string EmployeeName, string OrganizationName, string LeaveType, decimal Balance);
+}

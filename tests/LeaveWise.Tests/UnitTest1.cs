@@ -1,4 +1,7 @@
 using LeaveWise.Domain;
+using LeaveWise.Data;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 
 namespace LeaveWise.Tests;
 
@@ -75,5 +78,125 @@ public sealed class LeavePolicyCatalogTests
         Assert.Contains("2025", rule.LegalReference);
         Assert.Contains("interim", rule.BaselineSummary, StringComparison.OrdinalIgnoreCase);
         Assert.True(rule.RequiresLegalReview);
+    }
+}
+
+
+public sealed class LeaveLedgerServiceTests
+{
+    [Fact]
+    public async Task SyncAccruals_IsIdempotentAndPostsMonthlyAnniversaries()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options;
+        await using var db = new ApplicationDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        var organization = new Organization { Name = "Test Org", CountryCode = "NA" };
+        var employment = new EmploymentRecord
+        {
+            Organization = organization, EmployeeName = "Test Employee", EmployeeEmail = "test@example.invalid",
+            CountryCode = "NA", EmploymentStartDate = new DateOnly(2026, 1, 15), Status = "Active"
+        };
+        db.EmploymentRecords.Add(employment);
+        db.OrganizationLeavePolicies.Add(new OrganizationLeavePolicy
+        {
+            Organization = organization, LeaveType = "Annual leave", Version = 1,
+            EffectiveFrom = new DateOnly(2026, 1, 1), CycleMonths = 12, EntitlementDaysPerCycle = 12m,
+            AccrualMethod = "MonthlyFixed", Status = "Active", ReviewReference = "Reviewed contract clause",
+            CreatedByUserId = "owner-1", ActivatedByUserId = "owner-1"
+        });
+        await db.SaveChangesAsync();
+
+        var firstRun = await LeaveLedgerService.SyncAccrualsAsync(db, employment, new DateOnly(2026, 4, 30), "owner-1");
+        var secondRun = await LeaveLedgerService.SyncAccrualsAsync(db, employment, new DateOnly(2026, 4, 30), "owner-1");
+        var balance = await LeaveLedgerService.GetBalanceAsync(db, employment.Id, "Annual leave", new DateOnly(2026, 4, 30));
+
+        Assert.Equal(3, firstRun);
+        Assert.Equal(0, secondRun);
+        Assert.Equal(3m, balance);
+        Assert.Equal(3, await db.LeaveLedger.CountAsync());
+        Assert.Equal(1, await db.AuditEvents.CountAsync(x => x.Action == "LeaveAccrualsPosted"));
+    }
+
+    [Fact]
+    public async Task SyncAccruals_RespectsSupersededPolicyEndDate()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options;
+        await using var db = new ApplicationDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        var organization = new Organization { Name = "Test Org", CountryCode = "ZA" };
+        var employment = new EmploymentRecord
+        {
+            Organization = organization, EmployeeName = "Test Employee", EmployeeEmail = "test@example.invalid",
+            CountryCode = "ZA", EmploymentStartDate = new DateOnly(2026, 1, 1), Status = "Active"
+        };
+        db.EmploymentRecords.Add(employment);
+        db.OrganizationLeavePolicies.AddRange(
+            new OrganizationLeavePolicy
+            {
+                Organization = organization, LeaveType = "Annual leave", Version = 1,
+                EffectiveFrom = new DateOnly(2026, 1, 1), EffectiveTo = new DateOnly(2026, 3, 31),
+                CycleMonths = 12, EntitlementDaysPerCycle = 12m, AccrualMethod = "MonthlyFixed",
+                Status = "Superseded", ReviewReference = "Previous reviewed policy", CreatedByUserId = "owner-1"
+            },
+            new OrganizationLeavePolicy
+            {
+                Organization = organization, LeaveType = "Annual leave", Version = 2,
+                EffectiveFrom = new DateOnly(2026, 4, 1), CycleMonths = 12, EntitlementDaysPerCycle = 24m,
+                AccrualMethod = "MonthlyFixed", Status = "Active", ReviewReference = "New reviewed policy",
+                CreatedByUserId = "owner-1", ActivatedByUserId = "owner-1"
+            });
+        await db.SaveChangesAsync();
+
+        var posted = await LeaveLedgerService.SyncAccrualsAsync(db, employment, new DateOnly(2026, 5, 31), "owner-1");
+        var entries = await db.LeaveLedger.OrderBy(x => x.EffectiveDate).ToListAsync();
+
+        Assert.Equal(5, posted);
+        Assert.Collection(entries,
+            x => { Assert.Equal(new DateOnly(2026, 1, 31), x.EffectiveDate); Assert.Equal(1m, x.DayDelta); },
+            x => { Assert.Equal(new DateOnly(2026, 2, 28), x.EffectiveDate); Assert.Equal(1m, x.DayDelta); },
+            x => { Assert.Equal(new DateOnly(2026, 3, 31), x.EffectiveDate); Assert.Equal(1m, x.DayDelta); },
+            x => { Assert.Equal(new DateOnly(2026, 4, 30), x.EffectiveDate); Assert.Equal(2m, x.DayDelta); },
+            x => { Assert.Equal(new DateOnly(2026, 5, 31), x.EffectiveDate); Assert.Equal(2m, x.DayDelta); });
+    }
+}
+
+public sealed class LeaveLedgerRoundingTests
+{
+    [Fact]
+    public async Task SyncAccruals_TrueUpsRoundingAtCycleEnd()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options;
+        await using var db = new ApplicationDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        var organization = new Organization { Name = "Rounding Test", CountryCode = "ZA" };
+        var employment = new EmploymentRecord
+        {
+            Organization = organization, EmployeeName = "Test Employee", EmployeeEmail = "rounding@example.invalid",
+            CountryCode = "ZA", EmploymentStartDate = new DateOnly(2026, 1, 1), Status = "Active"
+        };
+        db.EmploymentRecords.Add(employment);
+        db.OrganizationLeavePolicies.Add(new OrganizationLeavePolicy
+        {
+            Organization = organization, LeaveType = "Annual leave", Version = 1,
+            EffectiveFrom = new DateOnly(2026, 1, 1), CycleMonths = 12, EntitlementDaysPerCycle = 20m,
+            AccrualMethod = "MonthlyFixed", Status = "Active", ReviewReference = "Reviewed contract clause",
+            CreatedByUserId = "owner-1"
+        });
+        await db.SaveChangesAsync();
+
+        await LeaveLedgerService.SyncAccrualsAsync(db, employment, new DateOnly(2026, 12, 31), "owner-1");
+        var balance = await LeaveLedgerService.GetBalanceAsync(db, employment.Id, "Annual leave", new DateOnly(2026, 12, 31));
+
+        Assert.Equal(20m, balance);
+        Assert.Equal(12, await db.LeaveLedger.CountAsync());
     }
 }

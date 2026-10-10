@@ -10,9 +10,12 @@ Work-Wise (working product name: LeaveWise) is an employment leave and benefits 
 - Employer-created employment records with country, start date, email and basic work schedule.
 - A signed-in employee can link an unclaimed employment record by signing in with the same email address and submit leave requests.
 - Leave requests are stored in the database, scheduled workdays are counted from the recorded weekday schedule, and request submissions/decisions create audit events.
-- Organization owners can approve or decline pending requests. A user cannot decide their own request.
-- Leave request decisions do not change leave balances yet; policy and entitlement rules must be reviewed before ledger movements are enabled.
-- A source-linked Namibia/South Africa statutory leave catalog is available, including a reference to South Africa's parental-leave Constitutional Court framework. Every catalog entry is explicitly marked for legal review and is not used to calculate balances.
+- Organization owners can approve or decline pending requests. A user cannot decide their own request, approved requests cannot overlap, and the approver must confirm the leave-day count after checking the work schedule and public holidays.
+- Organization owners can create versioned, employer-configured leave policies with future effective dates, a review/source reference and an explicit activation attestation.
+- The ledger service posts fixed monthly accruals idempotently for complete calendar months, respecting policy effective dates and employment start dates. Approved paid leave creates a usage entry in the same database transaction as the decision. Balance views are reconstructed from ledger entries.
+- Approval requires a policy effective on the leave start date and sufficient balance unless that policy explicitly allows a negative balance. Unpaid leave does not deduct an accrued balance.
+- The accrual engine currently supports fixed monthly accrual only. Public-holiday calendars, shift-specific patterns, day/hour-based statutory accrual, carry-over caps, termination calculations and retroactive policy corrections are not automated.
+- A source-linked Namibia/South Africa statutory leave catalog is available, including the South African Constitutional Court's interim parental-leave framework. Every catalog entry is explicitly marked for legal review and is not itself used to calculate balances.
 - Contract selection is a local filename preview only. Files are not uploaded or retained.
 - Dashboard balances and benefits are sample data, not legal or payroll calculations.
 
@@ -39,12 +42,12 @@ In Development, the application applies checked-in EF Core migrations at startup
 
 ## Next implementation priorities
 1. Add explicit employee invitation/account-linking and employer role management.
-2. Implement versioned Namibia and South Africa rule sets with qualified review and effective-date tests.
-3. Add reviewed leave entitlements and ledger-based balances; never infer legal balances from demo values.
-4. Add secure document storage, contract extraction and clause review.
-5. Configure verified email delivery, reminders and notification preferences.
-6. Add privacy notices, retention/deletion workflows, monitoring, backups and restore drills.
-7. Add tenant-isolation, authorization and integration tests before a controlled pilot.
+2. Add public-holiday calendars and country/region-aware schedule rules; require explicit review when a calendar is missing.
+3. Implement reviewed day/hour-based accrual formulas, carry-over rules, termination calculations and safe retroactive corrections.
+4. Add contract-based entitlement comparison and qualified review workflows before enabling legal rule automation.
+5. Add secure document storage, contract extraction and clause review.
+6. Configure verified email delivery, reminders and notification preferences.
+7. Add privacy notices, retention/deletion workflows, monitoring, backups, restore drills and deeper tenant-isolation tests before a controlled pilot.
 
 ## Before production
 - Configure verified email delivery; the generated Identity email sender is not a production mail service.

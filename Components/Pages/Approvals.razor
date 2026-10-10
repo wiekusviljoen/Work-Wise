@@ -3,6 +3,7 @@
 @using System.Security.Claims
 @using Microsoft.EntityFrameworkCore
 @using LeaveWise.Data
+@using LeaveWise.Domain
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
 
@@ -45,6 +46,10 @@
                             <small>Submitted @item.RequestedUtc.ToLocalTime().ToString("dd MMM yyyy, HH:mm")</small>
                         </div>
                     </div>
+                    <div class="approval-review-controls">
+                        <div class="form-field"><label for="@($"days-{item.Id}")">Leave days to deduct (check public holidays)</label><InputNumber id="@($"days-{item.Id}")" class="form-control" @bind-Value="approvalDayCounts[item.Id]" min="0.25" max="366" step="0.25" /></div>
+                        <label class="policy-attestation"><InputCheckbox @bind-Value="approvalConfirmations[item.Id]" /> I checked the dates, work schedule and applicable public holidays; this day count is correct.</label>
+                    </div>
                     <div class="approval-actions">
                         <button class="button-primary" type="button" disabled="@isReviewing" @onclick="() => ReviewRequest(item.Id, true)">Approve</button>
                         <button class="button-secondary" type="button" disabled="@isReviewing" @onclick="() => ReviewRequest(item.Id, false)">Decline</button>
@@ -53,7 +58,7 @@
             }
         </section>
     }
-    <p class="form-footnote" style="margin-top:16px">Approvals update request status and create an audit event. Leave balances are not changed automatically until an entitlement policy has been reviewed and configured.</p>
+    <p class="form-footnote" style="margin-top:16px">Paid leave approvals require an employer-configured policy effective on the leave start date and sufficient ledger balance unless negative balances are explicitly allowed. Approval creates a usage entry and an audit event. Public-holiday calendars and shift-specific rules still require manual verification.</p>
 </div>
 
 @code {
@@ -64,6 +69,8 @@
     private string? feedbackDetail;
     private readonly List<Guid> ownedOrganizationIds = new();
     private readonly List<ApprovalItem> requests = new();
+    private readonly Dictionary<Guid, decimal> approvalDayCounts = new();
+    private readonly Dictionary<Guid, bool> approvalConfirmations = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -78,6 +85,8 @@
     {
         requests.Clear();
         ownedOrganizationIds.Clear();
+        approvalDayCounts.Clear();
+        approvalConfirmations.Clear();
         await using var db = await DbFactory.CreateDbContextAsync();
         var ownedIds = await db.OrganizationMemberships
             .Where(x => x.UserId == userId && x.IsActive && x.Role == "Owner")
@@ -90,13 +99,25 @@
             .Where(x => ownedIds.Contains(x.EmploymentRecord.OrganizationId) && x.Status == "Pending")
             .OrderBy(x => x.StartDate).ThenBy(x => x.RequestedUtc)
             .Take(200).ToListAsync();
-        requests.AddRange(rows.Select(x => new ApprovalItem(x.Id, x.EmploymentRecord.EmployeeName, x.EmploymentRecord.Organization.Name,
-            x.LeaveType, x.StartDate, x.EndDate, x.ScheduledWorkdays ?? 0, x.EmployeeNote, x.RequestedUtc, x.RequestedByUserId)));
+        foreach (var row in rows)
+        {
+            var view = new ApprovalItem(row.Id, row.EmploymentRecord.EmployeeName, row.EmploymentRecord.Organization.Name,
+                row.LeaveType, row.StartDate, row.EndDate, row.ScheduledWorkdays ?? 0, row.EmployeeNote, row.RequestedUtc, row.RequestedByUserId);
+            requests.Add(view);
+            approvalDayCounts[view.Id] = view.ScheduledWorkdays;
+            approvalConfirmations[view.Id] = false;
+        }
     }
 
     private async Task ReviewRequest(Guid requestId, bool approve)
     {
         if (isReviewing || string.IsNullOrWhiteSpace(userId)) return;
+        if (approve && (!approvalConfirmations.TryGetValue(requestId, out var daysConfirmed) || !daysConfirmed))
+        {
+            feedback = "Confirm the workday count before approval.";
+            feedbackDetail = "Check the employee's schedule and applicable public holidays, adjust the leave-day count if needed, then confirm the review.";
+            return;
+        }
         isReviewing = true;
         feedback = null;
         try
@@ -125,6 +146,77 @@
                 return;
             }
 
+            await using var transaction = await db.Database.BeginTransactionAsync();
+            if (approve)
+            {
+                var overlaps = await db.LeaveRequests.AnyAsync(x =>
+                    x.EmploymentRecordId == item.EmploymentRecordId
+                    && x.Id != item.Id
+                    && x.Status == "Approved"
+                    && x.StartDate <= item.EndDate
+                    && x.EndDate >= item.StartDate);
+                if (overlaps)
+                {
+                    feedback = "This request overlaps approved leave.";
+                    feedbackDetail = "Review the employee's existing approved requests and resolve the date conflict before approving this one.";
+                    return;
+                }
+            }
+
+            var requestedDays = item.ScheduledWorkdays ?? 0m;
+            if (approve)
+            {
+                requestedDays = approvalDayCounts.TryGetValue(item.Id, out var adjustedDays) ? adjustedDays : requestedDays;
+                var maximumCalendarDays = item.EndDate.DayNumber - item.StartDate.DayNumber + 1;
+                if (requestedDays <= 0 || requestedDays > maximumCalendarDays)
+                {
+                    feedback = "The leave-day count is invalid.";
+                    feedbackDetail = $"Enter a value greater than zero and no more than {maximumCalendarDays} calendar day(s).";
+                    return;
+                }
+                item.ScheduledWorkdays = requestedDays;
+            }
+
+            if (approve && !string.Equals(item.LeaveType, "Unpaid leave", StringComparison.Ordinal))
+            {
+                var today = DateOnly.FromDateTime(DateTime.Today);
+                var policy = await db.OrganizationLeavePolicies
+                    .Where(x => x.OrganizationId == item.EmploymentRecord.OrganizationId
+                        && x.LeaveType == item.LeaveType
+                        && (x.Status == "Active" || x.Status == "Superseded")
+                        && x.EffectiveFrom <= item.StartDate
+                        && (!x.EffectiveTo.HasValue || x.EffectiveTo.Value >= item.StartDate))
+                    .OrderByDescending(x => x.EffectiveFrom)
+                    .FirstOrDefaultAsync();
+                if (policy is null)
+                {
+                    feedback = "An active leave policy is required for the requested date.";
+                    feedbackDetail = $"Configure and activate a reviewed policy for {item.LeaveType} that covers {item.StartDate:dd MMM yyyy}. No balance was changed.";
+                    return;
+                }
+
+                await LeaveLedgerService.SyncAccrualsAsync(db, item.EmploymentRecord, today, userId);
+                var currentBalance = await LeaveLedgerService.GetBalanceAsync(db, item.EmploymentRecordId, item.LeaveType, item.StartDate);
+                if (!policy.AllowNegativeBalance && currentBalance < requestedDays)
+                {
+                    feedback = "Insufficient available leave balance.";
+                    feedbackDetail = $"Current balance: {currentBalance:0.####} days; requested: {requestedDays:0.####} days. No decision or ledger entry was saved.";
+                    return;
+                }
+
+                db.LeaveLedger.Add(new LeaveLedgerRecord
+                {
+                    EmploymentRecordId = item.EmploymentRecordId,
+                    LeaveType = item.LeaveType,
+                    EffectiveDate = item.StartDate,
+                    DayDelta = -requestedDays,
+                    EntryType = "Usage",
+                    Reference = $"leave-request:{item.Id:N}",
+                    Notes = $"Approved leave request {item.Id}.",
+                    CreatedByUserId = userId
+                });
+            }
+
             item.Status = approve ? "Approved" : "Rejected";
             item.ReviewedByUserId = userId;
             item.DecisionUtc = DateTime.UtcNow;
@@ -138,8 +230,11 @@
                 DetailsJson = System.Text.Json.JsonSerializer.Serialize(new { item.LeaveType, item.StartDate, item.EndDate, item.Status })
             });
             await db.SaveChangesAsync();
+            await transaction.CommitAsync();
             feedback = approve ? "Leave request approved." : "Leave request declined.";
-            feedbackDetail = "The employee can see the decision in their request history. The leave balance was not changed.";
+            feedbackDetail = approve && !string.Equals(item.LeaveType, "Unpaid leave", StringComparison.Ordinal)
+                ? "The employee can see the decision in their request history. An idempotent usage entry was recorded in the leave ledger."
+                : "The employee can see the decision in their request history. Unpaid leave does not deduct an accrued balance.";
             await LoadRequests();
         }
         catch (DbUpdateException)

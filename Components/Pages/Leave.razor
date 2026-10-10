@@ -40,7 +40,7 @@
     {
         <div class="notice-banner">
             <span class="notice-symbol">i</span>
-            <div><strong>Transparent early-access workflow</strong><p>Requests are saved to the database and await employer review. This version does not calculate legal entitlements or deduct leave balances automatically.</p></div>
+            <div><strong>Transparent early-access workflow</strong><p>Requests are saved for employer review. Scheduled workdays exclude your configured non-working days, but public-holiday calendars and shift-specific rules are not configured yet. Entitlement depends on an employer-reviewed policy; submitting does not mean approval.</p></div>
         </div>
         <div class="content-two-col">
             <section class="panel">
@@ -57,7 +57,7 @@
                             }
                         </InputSelect>
                     </div>
-                    <div class="form-field"><label for="leave-type">Leave type</label><InputSelect id="leave-type" class="form-control" @bind-Value="request.LeaveType"><option>Annual leave</option><option>Sick leave</option><option>Family responsibility</option><option>Unpaid leave</option><option>Other</option></InputSelect></div>
+                    <div class="form-field"><label for="leave-type">Leave type</label><InputSelect id="leave-type" class="form-control" @bind-Value="request.LeaveType"><option>Annual leave</option><option>Sick leave</option><option>Family responsibility leave</option><option>Compassionate leave</option><option>Maternity leave</option><option>Parental leave</option><option>Unpaid leave</option><option>Other</option></InputSelect></div>
                     <div class="form-row">
                         <div class="form-field"><label for="start-date">First day</label><InputDate id="start-date" class="form-control" @bind-Value="request.StartDate" /></div>
                         <div class="form-field"><label for="end-date">Last day</label><InputDate id="end-date" class="form-control" @bind-Value="request.EndDate" /></div>
@@ -169,7 +169,7 @@
             feedbackDetail = "Past-dated requests are not accepted in this early-access flow.";
             return;
         }
-        if (string.IsNullOrWhiteSpace(request.LeaveType) || request.LeaveType.Length > 48)
+        if (!new[] { "Annual leave", "Sick leave", "Family responsibility leave", "Compassionate leave", "Maternity leave", "Parental leave", "Unpaid leave", "Other" }.Contains(request.LeaveType, StringComparer.Ordinal))
         {
             feedback = "Choose a valid leave type.";
             feedbackDetail = "No request was saved.";
@@ -233,7 +233,7 @@
             await db.SaveChangesAsync();
             requests.Insert(0, new RequestView(record.Id, record.LeaveType, record.StartDate, record.EndDate, record.EmployeeNote, record.Status, employment.Organization.Name));
             feedback = "Leave request saved.";
-            feedbackDetail = $"It is pending employer review. {workdays} scheduled workday(s) were counted; no balance has been deducted.";
+            feedbackDetail = $"It is pending employer review. {workdays} scheduled workday(s) were counted excluding configured non-working weekdays. Public holidays are not automatically excluded and must be checked by the approver.";
             request = new LeaveRequestInput { EmploymentRecordId = employment.Id, StartDate = DateOnly.FromDateTime(DateTime.Today.AddDays(7)), EndDate = DateOnly.FromDateTime(DateTime.Today.AddDays(7)) };
         }
         catch (DbUpdateException)

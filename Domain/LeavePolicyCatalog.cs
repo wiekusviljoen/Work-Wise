@@ -79,7 +79,7 @@ public static class LeavePolicyCatalog
 
         new("ZA", "Parental leave",
             "The Constitutional Court's interim framework changed how parental leave provisions are to be read. A single parent or the only employed party in a parental relationship is entitled to at least four consecutive months; where both parties are employed, the aggregate entitlement is four months and ten days to be shared.",
-            "Do not use the old birth-mother / paternity / adoption categories as a simple fixed-day calculator. Family structure, adoption or commissioning arrangements, the interim order and later legislation require specialist review.",
+            "Do not use the old birth-mother / paternity / adoption categories as a simple fixed-day calculator. Family structure, adoption or commissioning arrangements, the interim order and later legislation require specialist review. The Labour Law Amendment Bill published in February 2026 is a proposal; confirm whether any later legislation has come into force before applying it.",
             "Werner van Wyk and Others v Minister of Employment and Labour, [2025] ZACC 20",
             "Constitutional Court of South Africa — judgment and order",
             "https://www.concourt.org.za/index.php/judgement/617-a-werner-van-wyk-and-others-v-minister-for-employment-and-labour-b-commission-for-gender-equality-and-another-v-minister-for-employment-and-labour-and-others",

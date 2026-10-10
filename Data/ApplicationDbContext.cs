@@ -12,6 +12,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<ContractClause> ContractClauses => Set<ContractClause>();
     public DbSet<LeaveRequestRecord> LeaveRequests => Set<LeaveRequestRecord>();
     public DbSet<LeaveLedgerRecord> LeaveLedger => Set<LeaveLedgerRecord>();
+    public DbSet<OrganizationLeavePolicy> OrganizationLeavePolicies => Set<OrganizationLeavePolicy>();
     public DbSet<BenefitReminder> BenefitReminders => Set<BenefitReminder>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
 
@@ -33,6 +34,10 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
         builder.Entity<AuditEvent>().HasIndex(x => new { x.OrganizationId, x.OccurredUtc });
         builder.Entity<AuditEvent>().HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
         builder.Entity<LeaveLedgerRecord>().HasIndex(x => new { x.EmploymentRecordId, x.LeaveType, x.EffectiveDate });
+        builder.Entity<LeaveLedgerRecord>().HasIndex(x => new { x.EmploymentRecordId, x.EntryType, x.Reference }).IsUnique();
+        builder.Entity<OrganizationLeavePolicy>().HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
+        builder.Entity<OrganizationLeavePolicy>().HasIndex(x => new { x.OrganizationId, x.LeaveType, x.Version }).IsUnique();
+        builder.Entity<OrganizationLeavePolicy>().Property(x => x.EntitlementDaysPerCycle).HasPrecision(9, 4);
         builder.Entity<LeaveRequestRecord>().HasIndex(x => new { x.EmploymentRecordId, x.Status, x.StartDate });
         builder.Entity<ContractClause>().Property(x => x.Confidence).HasPrecision(5, 4);
         builder.Entity<ContractClause>().Property(x => x.EntitlementDays).HasPrecision(9, 4);

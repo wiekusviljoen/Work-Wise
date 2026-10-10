@@ -370,6 +370,9 @@ namespace LeaveWise.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("EmploymentRecordId", "EntryType", "Reference")
+                        .IsUnique();
+
                     b.HasIndex("EmploymentRecordId", "LeaveType", "EffectiveDate");
 
                     b.ToTable("LeaveLedger");
@@ -454,6 +457,77 @@ namespace LeaveWise.Migrations
                     b.HasIndex("CountryCode", "Name");
 
                     b.ToTable("Organizations");
+                });
+
+            modelBuilder.Entity("LeaveWise.Data.OrganizationLeavePolicy", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AccrualMethod")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ActivatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ActivatedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("AllowNegativeBalance")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CreatedByUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("CycleMonths")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateOnly>("EffectiveFrom")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly?>("EffectiveTo")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("EntitlementDaysPerCycle")
+                        .HasPrecision(9, 4)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LeaveType")
+                        .IsRequired()
+                        .HasMaxLength(48)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReviewReference")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "LeaveType", "Version")
+                        .IsUnique();
+
+                    b.ToTable("OrganizationLeavePolicies");
                 });
 
             modelBuilder.Entity("LeaveWise.Data.OrganizationMembership", b =>
@@ -720,6 +794,17 @@ namespace LeaveWise.Migrations
                         .IsRequired();
 
                     b.Navigation("EmploymentRecord");
+                });
+
+            modelBuilder.Entity("LeaveWise.Data.OrganizationLeavePolicy", b =>
+                {
+                    b.HasOne("LeaveWise.Data.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Organization");
                 });
 
             modelBuilder.Entity("LeaveWise.Data.OrganizationMembership", b =>
