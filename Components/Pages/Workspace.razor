@@ -26,7 +26,7 @@
     {
         <div class="workspace-grid">
             <section class="panel">
-                <div class="panel-heading"><div><p class="eyebrow">NEW ORGANIZATION</p><h2>Create a company workspace</h2></div><span class="panel-icon">＋</span></div>
+                <div class="panel-heading"><div><p class="eyebrow">NEW ORGANIZATION</p><h2>Create a company workspace</h2></div><span class="panel-icon">?</span></div>
                 <EditForm Model="input" OnValidSubmit="CreateWorkspace">
                     <DataAnnotationsValidator /><ValidationSummary class="text-danger" />
                     <div class="form-field"><label for="org-name">Company or employer name</label><InputText id="org-name" class="form-control" @bind-Value="input.Name" maxlength="160" placeholder="e.g. Example Trading (Pty) Ltd" /><ValidationMessage For="@(() => input.Name)" /></div>
@@ -39,13 +39,13 @@
                 <div class="panel-heading"><div><p class="eyebrow">YOUR MEMBERSHIPS</p><h2>Available workspaces</h2></div><span class="count-chip">@memberships.Count</span></div>
                 @if (memberships.Count == 0)
                 {
-                    <div class="empty-state"><span class="empty-icon">⌂</span><strong>No workspace yet</strong><p>Create an organization to start setting up employment records.</p></div>
+                    <div class="empty-state"><span class="empty-icon">?</span><strong>No workspace yet</strong><p>Create an organization to start setting up employment records.</p></div>
                 }
                 else
                 {
                     @foreach (var membership in memberships)
                     {
-                        <div class="workspace-item"><div class="workspace-symbol">⌂</div><div class="workspace-item-main"><strong>@membership.Organization.Name</strong><small>@(membership.Organization.CountryCode == "NA" ? "Namibia" : "South Africa") · @membership.Role</small></div><span class="status-label status-review">Active</span></div>
+                        <div class="workspace-item"><div class="workspace-symbol">?</div><div class="workspace-item-main"><strong>@membership.Organization.Name</strong><small>@(membership.Organization.CountryCode == "NA" ? "Namibia" : "South Africa") · @membership.Role</small></div><span class="status-label status-review">Active</span></div>
                     }
                 }
             </section>
@@ -54,7 +54,7 @@
         @if (ownedOrganizations.Count > 0)
         {
             <section class="panel" style="margin-top:24px">
-                <div class="panel-heading"><div><p class="eyebrow">EMPLOYMENT SETUP</p><h2>Add an employee record</h2></div><span class="panel-icon">＋</span></div>
+                <div class="panel-heading"><div><p class="eyebrow">EMPLOYMENT SETUP</p><h2>Add an employee record</h2></div><span class="panel-icon">?</span></div>
                 <p class="page-intro">Add the employee's name and email address. When they sign in with that same confirmed email, Work-Wise can link the record to their account. Do not enter sensitive medical details here.</p>
                 <EditForm Model="employeeInput" OnValidSubmit="CreateEmployment">
                     <DataAnnotationsValidator /><ValidationSummary class="text-danger" />
@@ -87,7 +87,7 @@
             {
                 @foreach (var employee in employmentRecords)
                 {
-                    <div class="workspace-item"><div class="workspace-symbol">♙</div><div class="workspace-item-main"><strong>@employee.EmployeeName</strong><small>@employee.OrganizationName · @employee.EmployeeEmail</small><small>Started @employee.EmploymentStartDate.ToString("dd MMM yyyy") · @employee.Status</small></div></div>
+                    <div class="workspace-item"><div class="workspace-symbol">?</div><div class="workspace-item-main"><strong>@employee.EmployeeName</strong><small>@employee.OrganizationName · @employee.EmployeeEmail</small><small>Started @employee.EmploymentStartDate.ToString("dd MMM yyyy") · @employee.Status</small></div></div>
                 }
             }
         </section>

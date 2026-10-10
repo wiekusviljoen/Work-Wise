@@ -30,7 +30,7 @@
     else if (employments.Count == 0)
     {
         <section class="panel empty-state">
-            <span class="empty-icon">⌂</span>
+            <span class="empty-icon">?</span>
             <strong>No linked employment record yet</strong>
             <p>Ask your employer to add your employment record in their Work-Wise workspace using the email address on your confirmed account. It will appear here after you sign in again.</p>
             <p class="form-footnote">Leave balances remain unavailable until your contract and applicable policy have been reviewed.</p>
@@ -44,7 +44,7 @@
         </div>
         <div class="content-two-col">
             <section class="panel">
-                <div class="panel-heading"><div><p class="eyebrow">QUICK ACTION</p><h2>Request time off</h2></div><span class="panel-icon">＋</span></div>
+                <div class="panel-heading"><div><p class="eyebrow">QUICK ACTION</p><h2>Request time off</h2></div><span class="panel-icon">?</span></div>
                 <EditForm Model="request" OnValidSubmit="SubmitRequest">
                     <DataAnnotationsValidator />
                     <ValidationSummary class="text-danger" />
@@ -71,7 +71,7 @@
                 <div class="panel-heading"><div><p class="eyebrow">RECENT ACTIVITY</p><h2>Request history</h2></div><span class="count-chip">@requests.Count</span></div>
                 @if (requests.Count == 0)
                 {
-                    <div class="empty-state"><span class="empty-icon">◷</span><strong>No requests yet</strong><p>Your saved requests will appear here.</p></div>
+                    <div class="empty-state"><span class="empty-icon">?</span><strong>No requests yet</strong><p>Your saved requests will appear here.</p></div>
                 }
                 else
                 {
