@@ -22,6 +22,29 @@ builder.Services.AddAuthentication(options =>
     })
     .AddIdentityCookies();
 
+// Require HTTPS-only cookies in production while allowing local HTTP development.
+var secureCookiePolicy = builder.Environment.IsDevelopment()
+    ? CookieSecurePolicy.SameAsRequest
+    : CookieSecurePolicy.Always;
+builder.Services.Configure<Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationOptions>(
+    IdentityConstants.ApplicationScheme, options =>
+    {
+        options.Cookie.SecurePolicy = secureCookiePolicy;
+        options.Cookie.HttpOnly = true;
+    });
+builder.Services.Configure<Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationOptions>(
+    IdentityConstants.ExternalScheme, options =>
+    {
+        options.Cookie.SecurePolicy = secureCookiePolicy;
+        options.Cookie.HttpOnly = true;
+    });
+builder.Services.AddAntiforgery(options =>
+{
+    options.Cookie.SecurePolicy = secureCookiePolicy;
+    options.Cookie.HttpOnly = true;
+    options.Cookie.SameSite = SameSiteMode.Strict;
+});
+
 var databaseProvider = builder.Configuration["DatabaseProvider"]
     ?? (builder.Environment.IsDevelopment() ? "Sqlite" : "SqlServer");
 
@@ -66,6 +89,20 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
 builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
 
 var app = builder.Build();
+
+// Add conservative browser security headers without overriding headers set by the host.
+app.Use(async (context, next) =>
+{
+    context.Response.OnStarting(() =>
+    {
+        var headers = context.Response.Headers;
+        headers.TryAdd("X-Content-Type-Options", "nosniff");
+        headers.TryAdd("Referrer-Policy", "strict-origin-when-cross-origin");
+        headers.TryAdd("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+        return Task.CompletedTask;
+    });
+    await next();
+});
 
 // Local SQLite is a disposable development database. SQL Server migrations are applied only
 // when explicitly enabled in the hosting environment.

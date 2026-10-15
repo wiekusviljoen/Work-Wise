@@ -95,6 +95,11 @@
             RedirectManager.RedirectToInvalidUser(UserManager, HttpContext);
             return;
         }
+        if (EmailSender is IdentityNoOpEmailSender)
+        {
+            message = "Email delivery is not configured. Your email address has not been changed.";
+            return;
+        }
 
         var userId = await UserManager.GetUserIdAsync(user);
         var code = await UserManager.GenerateChangeEmailTokenAsync(user, Input.NewEmail);
@@ -118,6 +123,11 @@
         if (user is null)
         {
             RedirectManager.RedirectToInvalidUser(UserManager, HttpContext);
+            return;
+        }
+        if (EmailSender is IdentityNoOpEmailSender)
+        {
+            message = "Email delivery is not configured. No verification email was sent.";
             return;
         }
 

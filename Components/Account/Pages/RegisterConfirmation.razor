@@ -7,6 +7,7 @@
 
 @inject UserManager<ApplicationUser> UserManager
 @inject IEmailSender<ApplicationUser> EmailSender
+@inject IWebHostEnvironment HostEnvironment
 @inject NavigationManager NavigationManager
 @inject IdentityRedirectManager RedirectManager
 
@@ -22,6 +23,10 @@
         This app does not currently have a real email sender registered, see <a href="https://aka.ms/aspaccountconf">these docs</a> for how to configure a real email sender.
         Normally this would be emailed: <a href="@emailConfirmationLink">Click here to confirm your account</a>
     </p>
+}
+else if (EmailSender is IdentityNoOpEmailSender)
+{
+    <p role="alert">Email delivery is not configured, so no confirmation email was sent. Contact the site administrator if confirmation is required.</p>
 }
 else
 {
@@ -55,9 +60,9 @@ else
             HttpContext.Response.StatusCode = StatusCodes.Status404NotFound;
             statusMessage = "Error finding user for unspecified email";
         }
-        else if (EmailSender is IdentityNoOpEmailSender)
+        else if (EmailSender is IdentityNoOpEmailSender && HostEnvironment.IsDevelopment())
         {
-            // Once you add a real email sender, you should remove this code that lets you confirm the account
+            // Development-only convenience; never expose confirmation links in a public deployment.
             var userId = await UserManager.GetUserIdAsync(user);
             var code = await UserManager.GenerateEmailConfirmationTokenAsync(user);
             code = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(code));

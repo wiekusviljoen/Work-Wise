@@ -47,8 +47,8 @@
                         </div>
                     </div>
                     <div class="approval-review-controls">
-                        <div class="form-field"><label for="@($"days-{item.Id}")">Leave days to deduct (check public holidays)</label><InputNumber id="@($"days-{item.Id}")" class="form-control" @bind-Value="approvalDayCounts[item.Id]" min="0.25" max="366" step="0.25" /></div>
-                        <label class="policy-attestation"><InputCheckbox @bind-Value="approvalConfirmations[item.Id]" /> I checked the dates, work schedule and applicable public holidays; this day count is correct.</label>
+                        <div class="form-field"><label for="@($"days-{item.Id}")">Leave days to deduct (check public holidays)</label><input type="number" id="@($"days-{item.Id}")" class="form-control" @bind="approvalDayCounts[item.Id]" min="0.25" max="366" step="0.25" /></div>
+                        <label class="policy-attestation"><input type="checkbox" @bind="approvalConfirmations[item.Id]" /> I checked the dates, work schedule and applicable public holidays; this day count is correct.</label>
                     </div>
                     <div class="approval-actions">
                         <button class="button-primary" type="button" disabled="@isReviewing" @onclick="() => ReviewRequest(item.Id, true)">Approve</button>

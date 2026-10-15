@@ -44,7 +44,7 @@
                         <option>Annual leave</option><option>Sick leave</option><option>Family responsibility leave</option><option>Compassionate leave</option><option>Maternity leave</option><option>Parental leave</option><option>Unpaid leave</option><option>Other</option>
                     </InputSelect></div>
                     <div class="form-row">
-                        <div class="form-field"><label for="policy-days">Entitlement days per cycle</label><InputNumber id="policy-days" class="form-control" @bind-Value="input.EntitlementDaysPerCycle" min="0.01" max="365" step="0.25" /><ValidationMessage For="@(() => input.EntitlementDaysPerCycle)" /></div>
+                        <div class="form-field"><label for="policy-days">Entitlement days per cycle</label><InputNumber id="policy-days" class="form-control" @bind-Value="input.EntitlementDaysPerCycle" min="0.01" max="365" step="0.01" /><ValidationMessage For="@(() => input.EntitlementDaysPerCycle)" /></div>
                         <div class="form-field"><label for="policy-cycle">Cycle length (months)</label><InputNumber id="policy-cycle" class="form-control" @bind-Value="input.CycleMonths" min="1" max="60" /><ValidationMessage For="@(() => input.CycleMonths)" /></div>
                     </div>
                     <div class="form-field"><label for="policy-effective">Effective from (first day of a future month)</label><InputDate id="policy-effective" class="form-control" @bind-Value="input.EffectiveFrom" /><ValidationMessage For="@(() => input.EffectiveFrom)" /></div>
@@ -72,7 +72,7 @@
                             @if (policy.Status == "Draft")
                             {
                                 <div class="policy-activate">
-                                    <label class="policy-attestation"><InputCheckbox @bind-Value="activationConfirmations[policy.Id]" /> I have independently checked this policy against applicable law, the contract and work schedule.</label>
+                                    <label class="policy-attestation"><input type="checkbox" @bind="activationConfirmations[policy.Id]" /> I have independently checked this policy against applicable law, the contract and work schedule.</label>
                                     <button class="button-primary" type="button" disabled="@isSaving" @onclick="() => ActivatePolicy(policy.Id)">Activate policy</button>
                                 </div>
                             }

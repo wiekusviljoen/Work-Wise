@@ -1,19 +1,18 @@
 @page "/counter"
-@rendermode InteractiveServer
 
-<PageTitle>Counter | Work-Wise</PageTitle>
+<PageTitle>Unavailable sample | Work-Wise</PageTitle>
 
-<h1>Counter</h1>
-
-<p role="status">Current count: @currentCount</p>
-
-<button class="btn btn-primary" @onclick="IncrementCount">Click me</button>
-
-@code {
-    private int currentCount = 0;
-
-    private void IncrementCount()
-    {
-        currentCount++;
-    }
-}
+<div class="page-wrap">
+    <div class="page-title-row">
+        <div>
+            <p class="eyebrow">DEVELOPMENT SAMPLE</p>
+            <h1>Sample page</h1>
+            <p class="page-intro">The default counter demonstration is not part of Work-Wise's current features.</p>
+        </div>
+    </div>
+    <section class="panel empty-state">
+        <strong>Nothing to do here</strong>
+        <p>This development sample has been disabled so it is not mistaken for a real workplace feature.</p>
+        <a class="button-primary" href="/">Return to Work-Wise</a>
+    </section>
+</div>
