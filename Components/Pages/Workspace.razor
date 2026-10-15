@@ -4,6 +4,7 @@
 @using System.Security.Claims
 @using Microsoft.EntityFrameworkCore
 @using LeaveWise.Data
+@using LeaveWise.Domain
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject NavigationManager Navigation
@@ -56,7 +57,7 @@
         {
             <section class="panel" style="margin-top:24px">
                 <div class="panel-heading"><div><p class="eyebrow">EMPLOYMENT SETUP</p><h2>Add an employee record</h2></div><span class="panel-icon">INFO</span></div>
-                <p class="page-intro">Add the employee's name and email address. When they sign in with that same confirmed email, Work-Wise can link the record to their account. Do not enter sensitive medical details here.</p>
+                <p class="page-intro">Add the employee's name and email address, then generate a one-time invitation code for them to enter after registering or signing in. The code expires after seven days. Do not enter sensitive medical details here.</p>
                 <EditForm Model="employeeInput" OnValidSubmit="CreateEmployment" FormName="CreateEmployment">
                     <DataAnnotationsValidator /><ValidationSummary class="text-danger" />
                     <div class="form-row">
@@ -82,17 +83,36 @@
             <div class="panel-heading"><div><p class="eyebrow">EMPLOYEE RECORDS</p><h2>Employment records</h2></div><span class="count-chip">@employmentRecords.Count</span></div>
             @if (employmentRecords.Count == 0)
             {
-                <div class="empty-state"><strong>No employee records yet</strong><p>Create a company workspace and add an employee record to begin.</p></div>
+                <div class="empty-state"><strong>No employee records to display</strong><p>@(ownedOrganizations.Count == 0 ? "Employment records are visible only to workspace owners. Your linked record is available in Leave & absences." : "Create an employee record in one of your owned workspaces to begin.")</p></div>
             }
             else
             {
                 @foreach (var employee in employmentRecords)
                 {
-                    <div class="workspace-item"><div class="workspace-symbol">ORG</div><div class="workspace-item-main"><strong>@employee.EmployeeName</strong><small>@employee.OrganizationName · @employee.EmployeeEmail</small><small>Started @employee.EmploymentStartDate.ToString("dd MMM yyyy") · @employee.Status</small></div></div>
+                    <div class="workspace-item">
+                        <div class="workspace-symbol">ORG</div>
+                        <div class="workspace-item-main">
+                            <strong>@employee.EmployeeName</strong>
+                            <small>@employee.OrganizationName · @employee.EmployeeEmail</small>
+                            <small>Started @employee.EmploymentStartDate.ToString("dd MMM yyyy") · @employee.Status · @(employee.IsLinked ? "Linked to account" : "Not linked")</small>
+                            @if (inviteCodes.TryGetValue(employee.Id, out var inviteCode))
+                            {
+                                <div class="inline-feedback">
+                                    <strong>One-time invitation code</strong>
+                                    <p><code>@inviteCode</code></p>
+                                    <p>Share privately with this employee. It expires in seven days and is shown only in this session.</p>
+                                </div>
+                            }
+                        </div>
+                        @if (employee.Status == "Active" && !employee.IsLinked)
+                        {
+                            <button type="button" class="button-primary" disabled="@isSavingInvite" @onclick="() => CreateInvite(employee.Id)">@(isSavingInvite ? "Creating…" : "Create invite code")</button>
+                        }
+                    </div>
                 }
             }
         </section>
-        <p class="form-footnote" style="margin-top:16px">Staff invitations, contract uploads, payroll integrations and legally verified leave policies are not enabled yet. Keep employee data minimal while testing.</p>
+        <p class="form-footnote" style="margin-top:16px">Email delivery, contract uploads, payroll integrations and legally verified leave policies are not enabled yet. Share invitation codes privately and keep employee data minimal while testing.</p>
     }
 </div>
 
@@ -102,10 +122,12 @@
     private readonly List<OrganizationMembership> memberships = new();
     private readonly List<OrganizationOption> ownedOrganizations = new();
     private readonly List<EmploymentView> employmentRecords = new();
+    private readonly Dictionary<Guid, string> inviteCodes = new();
     private string? userId;
     private bool isLoading = true;
     private bool isSaving;
     private bool isSavingEmployee;
+    private bool isSavingInvite;
     private string? message;
     private string? messageDetail;
 
@@ -137,11 +159,13 @@
         if (ownedOrganizations.Count > 0 && !ownedOrganizations.Any(x => x.Id == employeeInput.OrganizationId))
             employeeInput.OrganizationId = ownedOrganizations[0].Id;
 
-        var organizationIds = rows.Select(x => x.OrganizationId).ToArray();
+        // Employee memberships must never expose the rest of the organization's staff list.
+        // Only owners receive the employment-record management view.
+        var organizationIds = ownedOrganizations.Select(x => x.Id).ToArray();
         var staff = await db.EmploymentRecords.Include(x => x.Organization)
             .Where(x => organizationIds.Contains(x.OrganizationId))
             .OrderBy(x => x.EmployeeName).ToListAsync();
-        employmentRecords.AddRange(staff.Select(x => new EmploymentView(x.EmployeeName, x.EmployeeEmail, x.Organization.Name, x.EmploymentStartDate, x.Status)));
+        employmentRecords.AddRange(staff.Select(x => new EmploymentView(x.Id, x.EmployeeName, x.EmployeeEmail, x.Organization.Name, x.EmploymentStartDate, x.Status, !string.IsNullOrWhiteSpace(x.EmployeeUserId))));
     }
 
     private async Task CreateWorkspace()
@@ -192,6 +216,36 @@
         finally { isSaving = false; }
     }
 
+    private async Task CreateInvite(Guid employmentRecordId)
+    {
+        if (isSavingInvite || string.IsNullOrWhiteSpace(userId)) return;
+        isSavingInvite = true;
+        message = null;
+        inviteCodes.Remove(employmentRecordId);
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var result = await EmploymentInviteService.CreateInviteAsync(db, employmentRecordId, userId, DateTime.UtcNow);
+            message = result.Succeeded ? "Employee invitation created." : "Could not create the invitation.";
+            messageDetail = result.Message;
+            if (result.Succeeded && !string.IsNullOrWhiteSpace(result.Code))
+                inviteCodes[employmentRecordId] = result.Code;
+        }
+        catch (DbUpdateException ex)
+        {
+            Logger.LogError(ex, "Database update failed while creating an employee invitation for record {EmploymentRecordId}", employmentRecordId);
+            message = "The invitation could not be saved.";
+            messageDetail = "Refresh the page and check the employment record before trying again.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Unexpected error while creating an employee invitation for record {EmploymentRecordId}", employmentRecordId);
+            message = "The invitation could not be created.";
+            messageDetail = "Please refresh and try again. No invitation code has been displayed.";
+        }
+        finally { isSavingInvite = false; }
+    }
+
     private async Task CreateEmployment()
     {
         if (isSavingEmployee || string.IsNullOrWhiteSpace(userId)) return;
@@ -239,7 +293,7 @@
             employeeInput.EmployeeName = "";
             employeeInput.EmployeeEmail = "";
             message = "Employment record created.";
-            messageDetail = "The employee can sign in with this confirmed email to link the record and submit leave requests.";
+            messageDetail = "Create a one-time invitation code from the employment record list and share it privately with the employee.";
             await LoadData();
         }
         catch (DbUpdateException ex)
@@ -271,5 +325,5 @@
         [Range(1, 168)] public decimal WeeklyHours { get; set; } = 45m;
     }
     private sealed record OrganizationOption(Guid Id, string Name, string CountryCode);
-    private sealed record EmploymentView(string EmployeeName, string EmployeeEmail, string OrganizationName, DateOnly EmploymentStartDate, string Status);
+    private sealed record EmploymentView(Guid Id, string EmployeeName, string EmployeeEmail, string OrganizationName, DateOnly EmploymentStartDate, string Status, bool IsLinked);
 }

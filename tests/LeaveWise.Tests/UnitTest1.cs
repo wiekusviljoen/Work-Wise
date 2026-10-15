@@ -28,6 +28,20 @@ public sealed class LeaveCalculatorTests
     }
 
     [Fact]
+    public void CountScheduledWorkdays_HandlesMaximumDateWithoutOverflow()
+    {
+        var everyDay = Enum.GetValues<DayOfWeek>().ToHashSet();
+        Assert.Equal(1, LeaveCalculator.CountScheduledWorkdays(DateOnly.MaxValue, DateOnly.MaxValue, everyDay));
+    }
+
+    [Fact]
+    public void CountScheduledWorkdays_RejectsEmptySchedule()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            LeaveCalculator.CountScheduledWorkdays(new(2026, 10, 5), new(2026, 10, 5), new HashSet<DayOfWeek>()));
+    }
+
+    [Fact]
     public void CalculateMonthlyAccrual_UsesConfiguredEntitlementAndCapsAtCycle()
     {
         var policy = new LeaveCalculationPolicy("TEST-01", "XX", 12, 24m, Weekdays);
@@ -198,5 +212,138 @@ public sealed class LeaveLedgerRoundingTests
 
         Assert.Equal(20m, balance);
         Assert.Equal(12, await db.LeaveLedger.CountAsync());
+    }
+}
+
+public sealed class EmploymentInviteServiceTests
+{
+    private static readonly DateTime Now = new(2026, 10, 15, 12, 0, 0, DateTimeKind.Utc);
+
+    [Fact]
+    public async Task Invitation_CanBeRedeemedByMatchingUnconfirmedAccount_OnlyOnce()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options;
+        await using var db = new ApplicationDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        var employmentId = await SeedInviteScenarioAsync(db);
+
+        var invite = await EmploymentInviteService.CreateInviteAsync(db, employmentId, "owner-1", Now);
+        Assert.True(invite.Succeeded);
+        Assert.False(string.IsNullOrWhiteSpace(invite.Code));
+
+        var created = await db.AuditEvents.SingleAsync(x => x.Action == "EmployeeInviteCreated");
+        Assert.DoesNotContain(invite.Code!, created.DetailsJson);
+
+        var redeemed = await EmploymentInviteService.RedeemInviteAsync(db, "employee-1", invite.Code!, Now.AddMinutes(1));
+        Assert.True(redeemed.Succeeded);
+
+        var replay = await EmploymentInviteService.RedeemInviteAsync(db, "employee-1", invite.Code!, Now.AddMinutes(2));
+        Assert.False(replay.Succeeded);
+
+        var employment = await db.EmploymentRecords.AsNoTracking().SingleAsync(x => x.Id == employmentId);
+        Assert.Equal("employee-1", employment.EmployeeUserId);
+        var membership = await db.OrganizationMemberships.AsNoTracking()
+            .SingleAsync(x => x.UserId == "employee-1" && x.OrganizationId == employment.OrganizationId);
+        Assert.Equal("Employee", membership.Role);
+        Assert.True(membership.IsActive);
+        Assert.Equal(1, await db.AuditEvents.CountAsync(x => x.Action == "EmployeeInviteRedeemed"));
+    }
+
+    [Fact]
+    public async Task CreatingANewInvitationRevokesThePreviousCode()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options;
+        await using var db = new ApplicationDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        var employmentId = await SeedInviteScenarioAsync(db);
+
+        var first = await EmploymentInviteService.CreateInviteAsync(db, employmentId, "owner-1", Now);
+        var second = await EmploymentInviteService.CreateInviteAsync(db, employmentId, "owner-1", Now.AddMinutes(1));
+        Assert.True(first.Succeeded);
+        Assert.True(second.Succeeded);
+
+        var oldCode = await EmploymentInviteService.RedeemInviteAsync(db, "employee-1", first.Code!, Now.AddMinutes(2));
+        Assert.False(oldCode.Succeeded);
+
+        var currentCode = await EmploymentInviteService.RedeemInviteAsync(db, "employee-1", second.Code!, Now.AddMinutes(2));
+        Assert.True(currentCode.Succeeded);
+    }
+
+    [Fact]
+    public async Task InvitationRejectsWrongEmailWithoutConsumingCode()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options;
+        await using var db = new ApplicationDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        var employmentId = await SeedInviteScenarioAsync(db);
+
+        var invite = await EmploymentInviteService.CreateInviteAsync(db, employmentId, "owner-1", Now);
+        var wrongUser = await EmploymentInviteService.RedeemInviteAsync(db, "other-1", invite.Code!, Now.AddMinutes(1));
+        Assert.False(wrongUser.Succeeded);
+
+        var intendedUser = await EmploymentInviteService.RedeemInviteAsync(db, "employee-1", invite.Code!, Now.AddMinutes(2));
+        Assert.True(intendedUser.Succeeded);
+    }
+
+    [Fact]
+    public async Task InvitationExpiresAfterSevenDays()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options;
+        await using var db = new ApplicationDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        var employmentId = await SeedInviteScenarioAsync(db);
+
+        var invite = await EmploymentInviteService.CreateInviteAsync(db, employmentId, "owner-1", Now);
+        var result = await EmploymentInviteService.RedeemInviteAsync(db, "employee-1", invite.Code!, Now.AddDays(7).AddSeconds(1));
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("invalid, expired, or already used", result.Message);
+    }
+
+    [Fact]
+    public async Task OnlyAnActiveOrganizationOwnerCanCreateAnInvitation()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options;
+        await using var db = new ApplicationDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        var employmentId = await SeedInviteScenarioAsync(db);
+
+        var result = await EmploymentInviteService.CreateInviteAsync(db, employmentId, "other-1", Now);
+
+        Assert.False(result.Succeeded);
+        Assert.Null(result.Code);
+        Assert.Empty(await db.AuditEvents.Where(x => x.Action == "EmployeeInviteCreated").ToListAsync());
+    }
+
+    private static async Task<Guid> SeedInviteScenarioAsync(ApplicationDbContext db)
+    {
+        db.Users.AddRange(
+            new ApplicationUser { Id = "owner-1", UserName = "owner@example.invalid", NormalizedUserName = "OWNER@EXAMPLE.INVALID", Email = "owner@example.invalid", NormalizedEmail = "OWNER@EXAMPLE.INVALID", EmailConfirmed = true },
+            new ApplicationUser { Id = "employee-1", UserName = "employee@example.invalid", NormalizedUserName = "EMPLOYEE@EXAMPLE.INVALID", Email = "employee@example.invalid", NormalizedEmail = "EMPLOYEE@EXAMPLE.INVALID", EmailConfirmed = false },
+            new ApplicationUser { Id = "other-1", UserName = "other@example.invalid", NormalizedUserName = "OTHER@EXAMPLE.INVALID", Email = "other@example.invalid", NormalizedEmail = "OTHER@EXAMPLE.INVALID", EmailConfirmed = false });
+        var organization = new Organization { Name = "Invitation Test", CountryCode = "NA" };
+        db.Organizations.Add(organization);
+        db.OrganizationMemberships.Add(new OrganizationMembership
+        {
+            Organization = organization, UserId = "owner-1", Role = "Owner", IsActive = true
+        });
+        var employment = new EmploymentRecord
+        {
+            Organization = organization, EmployeeName = "Test Employee", EmployeeEmail = "employee@example.invalid",
+            CountryCode = "NA", EmploymentStartDate = new DateOnly(2026, 1, 1), Status = "Active"
+        };
+        db.EmploymentRecords.Add(employment);
+        await db.SaveChangesAsync();
+        return employment.Id;
     }
 }

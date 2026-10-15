@@ -3,8 +3,11 @@
 @using System.ComponentModel.DataAnnotations
 @using System.Security.Claims
 @using Microsoft.EntityFrameworkCore
+@using LeaveWise.Data
+@using LeaveWise.Domain
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IDbContextFactory<LeaveWise.Data.ApplicationDbContext> DbFactory
+@inject ILogger<Leave> Logger
 
 <PageTitle>Leave & absences | Work-Wise</PageTitle>
 
@@ -32,8 +35,18 @@
         <section class="panel empty-state">
             <span class="empty-icon">INFO</span>
             <strong>No linked employment record yet</strong>
-            <p>Ask your employer to add your employment record in their Work-Wise workspace using the email address on your confirmed account. It will appear here after you sign in again.</p>
-            <p class="form-footnote">Leave balances remain unavailable until your contract and applicable policy have been reviewed.</p>
+            <p>Ask your employer to create an employment record and generate a one-time invitation code. Sign in with the email address your employer entered, then enter that code below. Codes expire after seven days and can only be used once.</p>
+            <EditForm Model="inviteInput" OnValidSubmit="RedeemInvite" FormName="RedeemEmploymentInvite">
+                <DataAnnotationsValidator />
+                <ValidationSummary class="text-danger" />
+                <div class="form-field">
+                    <label for="employment-invite-code">Employer invitation code</label>
+                    <InputText id="employment-invite-code" class="form-control" @bind-Value="inviteInput.Code" autocomplete="off" maxlength="64" placeholder="Paste your one-time code" />
+                    <ValidationMessage For="@(() => inviteInput.Code)" />
+                </div>
+                <button type="submit" class="button-primary" disabled="@isRedeemingInvite">@(isRedeemingInvite ? "Linking…" : "Link employment record")</button>
+            </EditForm>
+            <p class="form-footnote">Leave balances remain unavailable until your contract and applicable policy have been reviewed. Keep your invitation code private.</p>
         </section>
     }
     else
@@ -100,6 +113,8 @@
     private string? userId;
     private bool isLoading = true;
     private bool isSaving;
+    private bool isRedeemingInvite;
+    private readonly InviteInput inviteInput = new();
     private string? feedback;
     private string? feedbackDetail;
     private readonly List<EmploymentOption> employments = new();
@@ -110,7 +125,6 @@
     {
         var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
         userId = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var email = state.User.FindFirstValue(ClaimTypes.Email);
         if (string.IsNullOrWhiteSpace(userId))
         {
             isLoading = false;
@@ -118,13 +132,26 @@
             return;
         }
 
+        await LoadData();
+        isLoading = false;
+    }
+
+    private async Task LoadData()
+    {
+        employments.Clear();
+        requests.Clear();
         await using var db = await DbFactory.CreateDbContextAsync();
 
-        // Only link by exact email for a signed-in account whose email is confirmed by the Identity sign-in policy.
-        if (!string.IsNullOrWhiteSpace(email))
+        // Email-based linking is permitted only when Identity has independently confirmed the address.
+        var account = await db.Users.AsNoTracking()
+            .Where(x => x.Id == userId)
+            .Select(x => new { x.Email, x.EmailConfirmed })
+            .SingleOrDefaultAsync();
+        if (account is { EmailConfirmed: true } && !string.IsNullOrWhiteSpace(account.Email))
         {
+            var verifiedEmail = account.Email.Trim().ToUpperInvariant();
             var unlinked = await db.EmploymentRecords
-                .Where(x => x.EmployeeUserId == null && x.EmployeeEmail.ToLower() == email.ToLower())
+                .Where(x => x.EmployeeUserId == null && x.Status == "Active" && x.EmployeeEmail.ToUpper() == verifiedEmail)
                 .ToListAsync();
             foreach (var record in unlinked)
                 record.EmployeeUserId = userId;
@@ -150,7 +177,38 @@
                 .ToListAsync();
             requests.AddRange(saved.Select(x => new RequestView(x.Id, x.LeaveType, x.StartDate, x.EndDate, x.EmployeeNote, x.Status, x.EmploymentRecord.Organization.Name)));
         }
-        isLoading = false;
+    }
+
+    private async Task RedeemInvite()
+    {
+        if (isRedeemingInvite || string.IsNullOrWhiteSpace(userId)) return;
+        isRedeemingInvite = true;
+        feedback = null;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var result = await EmploymentInviteService.RedeemInviteAsync(db, userId, inviteInput.Code, DateTime.UtcNow);
+            feedback = result.Succeeded ? "Employment record linked." : "Could not link the employment record.";
+            feedbackDetail = result.Message;
+            if (result.Succeeded)
+            {
+                inviteInput.Code = "";
+                await LoadData();
+            }
+        }
+        catch (DbUpdateException ex)
+        {
+            Logger.LogError(ex, "Database update failed while redeeming an employment invitation for user {UserId}", userId);
+            feedback = "The invitation could not be redeemed.";
+            feedbackDetail = "Refresh the page and check whether the employment record is already linked before trying again.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Unexpected error while redeeming an employment invitation for user {UserId}", userId);
+            feedback = "The invitation could not be redeemed.";
+            feedbackDetail = "Please refresh the page and try again. The code has not been displayed in any error message.";
+        }
+        finally { isRedeemingInvite = false; }
     }
 
     private async Task SubmitRequest()
@@ -167,6 +225,12 @@
         {
             feedback = "Choose today or a future date.";
             feedbackDetail = "Past-dated requests are not accepted in this early-access flow.";
+            return;
+        }
+        if (request.EndDate.DayNumber - request.StartDate.DayNumber > 365)
+        {
+            feedback = "The selected date range is too long.";
+            feedbackDetail = "A request can cover at most 366 calendar days. Split longer periods into separate requests.";
             return;
         }
         if (!new[] { "Annual leave", "Sick leave", "Family responsibility leave", "Compassionate leave", "Maternity leave", "Parental leave", "Unpaid leave", "Other" }.Contains(request.LeaveType, StringComparer.Ordinal))
@@ -247,6 +311,10 @@
         }
     }
 
+    private sealed class InviteInput
+    {
+        [Required, StringLength(64, MinimumLength = 20)] public string Code { get; set; } = "";
+    }
     private sealed record EmploymentOption(Guid Id, string EmployeeName, LeaveWise.Data.Organization Organization);
     private sealed record RequestView(Guid Id, string LeaveType, DateOnly StartDate, DateOnly EndDate, string? EmployeeNote, string Status, string OrganizationName);
     private sealed class LeaveRequestInput

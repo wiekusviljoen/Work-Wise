@@ -14,8 +14,11 @@ public static class LeaveCalculator
         if (scheduledWorkDays.Count == 0) throw new ArgumentException("At least one scheduled workday is required.", nameof(scheduledWorkDays));
         holidays ??= new HashSet<DateOnly>();
         var count = 0;
-        for (var date = startDate; date <= endDate; date = date.AddDays(1))
+        for (var date = startDate; ; date = date.AddDays(1))
+        {
             if (scheduledWorkDays.Contains(date.DayOfWeek) && !holidays.Contains(date)) count++;
+            if (date == endDate) break; // Avoid overflowing DateOnly when the range ends at 9999-12-31.
+        }
         return count;
     }
 

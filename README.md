@@ -5,10 +5,10 @@ Work-Wise is an employment leave and benefits assistant for Namibia and South Af
 ## Current implementation
 - ASP.NET Core Blazor Web App on .NET 10 with ASP.NET Core Identity.
 - Responsive landing page and navigation.
-- SQLite persistence with Entity Framework Core migrations.
+- SQLite persistence for local development (schema initialized with `EnsureCreated`) and SQL Server support for reviewed production migrations.
 - Company workspace creation and owner membership.
 - Employer-created employment records with country, start date, email and basic work schedule.
-- A signed-in employee can link an unclaimed employment record by signing in with the same email address and submit leave requests.
+- An employer can issue a seven-day, single-use invitation code for an unlinked employment record. The code is stored only as a SHA-256 hash, is revoked when replaced, and can be redeemed only by a signed-in account whose email matches the employment record. A confirmed Identity email can also be linked automatically.
 - Leave requests are stored in the database, scheduled workdays are counted from the recorded weekday schedule, and request submissions/decisions create audit events.
 - Organization owners can approve or decline pending requests. A user cannot decide their own request, approved requests cannot overlap, and the approver must confirm the leave-day count after checking the work schedule and public holidays.
 - Organization owners can create versioned, employer-configured leave policies with future effective dates, a review/source reference and an explicit activation attestation.
@@ -29,7 +29,7 @@ dotnet test .\Work-Wise.sln
 dotnet run
 ```
 
-In Development, the application applies checked-in EF Core migrations at startup to the local SQLite database configured in `appsettings.json` (`Data/app.db`). Production deployments should apply reviewed migrations as a release step rather than relying on development startup behavior.
+In Development, the application initializes the local SQLite schema with `EnsureCreated` using the connection string in `appsettings.json` (`Data/workwise-dev.db`). This does not apply migrations to an existing database. Production SQL Server migrations are enabled only when `ApplyDatabaseMigrations=true`; review and back up the production database before applying schema changes.
 
 ## Product principles
 1. AI may extract candidate facts; deterministic code calculates entitlements.
@@ -41,7 +41,7 @@ In Development, the application applies checked-in EF Core migrations at startup
 7. Health information is minimized.
 
 ## Next implementation priorities
-1. Add explicit employee invitation/account-linking and employer role management.
+1. Add email delivery, invitation delivery and employer role management; the current single-use invitation code must be shared securely out-of-band.
 2. Add public-holiday calendars and country/region-aware schedule rules; require explicit review when a calendar is missing.
 3. Implement reviewed day/hour-based accrual formulas, carry-over rules, termination calculations and safe retroactive corrections.
 4. Add contract-based entitlement comparison and qualified review workflows before enabling legal rule automation.
