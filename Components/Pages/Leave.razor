@@ -8,6 +8,7 @@
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IDbContextFactory<LeaveWise.Data.ApplicationDbContext> DbFactory
 @inject ILogger<Leave> Logger
+@inject LeaveNotificationService LeaveNotifications
 
 <PageTitle>Leave & absences | Work-Wise</PageTitle>
 
@@ -295,9 +296,10 @@
                 DetailsJson = System.Text.Json.JsonSerializer.Serialize(new { record.LeaveType, record.StartDate, record.EndDate, ScheduledWorkdays = workdays })
             });
             await db.SaveChangesAsync();
+            var employerNotified = await LeaveNotifications.NotifyOwnersAsync(db, record, employment.EmployeeName, employment.Organization.Name);
             requests.Insert(0, new RequestView(record.Id, record.LeaveType, record.StartDate, record.EndDate, record.EmployeeNote, record.Status, employment.Organization.Name));
             feedback = "Leave request saved.";
-            feedbackDetail = $"It is pending employer review. {workdays} scheduled workday(s) were counted excluding configured non-working weekdays. Public holidays are not automatically excluded and must be checked by the approver.";
+            feedbackDetail = $"It is pending employer review. {workdays} scheduled workday(s) were counted. " + (employerNotified ? "An email was sent to the employer's verified account address." : "Email notification was not delivered; the employer can still review it under Leave approvals.") + " Public holidays must be checked by the approver.";
             request = new LeaveRequestInput { EmploymentRecordId = employment.Id, StartDate = DateOnly.FromDateTime(DateTime.Today.AddDays(7)), EndDate = DateOnly.FromDateTime(DateTime.Today.AddDays(7)) };
         }
         catch (DbUpdateException)
