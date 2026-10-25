@@ -126,6 +126,13 @@
                                 </div>
                             }
                         </div>
+                        @if (employee.Status == "Active")
+                        {
+                            <div class="employee-actions">
+                                <button type="button" class="button-primary" disabled="@isManagingEmployee" @onclick="() => BeginEdit(employee)">Edit employee</button>
+                                <button type="button" class="button-primary" disabled="@isManagingEmployee" @onclick="() => BeginRemove(employee)">Remove employee</button>
+                            </div>
+                        }
                         @if (employee.Status == "Active" && !employee.IsLinked)
                         {
                             <button type="button" class="button-primary" disabled="@isSavingInvite" @onclick="() => CreateInvite(employee.Id)">@(isSavingInvite ? "Creating…" : "Create invite code")</button>
@@ -134,6 +141,32 @@
                 }
             }
         </section>
+        @if (editingId is not null)
+        {
+            <section class="panel" aria-label="Edit employee">
+                <h2>Edit employee</h2>
+                <EditForm Model="editInput" OnValidSubmit="SaveEmployee" FormName="EditEmployee" @key="editingId">
+                    <DataAnnotationsValidator /><ValidationSummary />
+                    <div class="form-field"><label for="edit-name">Employee full name</label><InputText id="edit-name" class="form-control" @bind-Value="editInput.EmployeeName" /></div>
+                    <div class="form-field"><label for="edit-email">Employee email</label><InputText id="edit-email" class="form-control" @bind-Value="editInput.EmployeeEmail" disabled="@editingLinked" /></div>
+                    @if (editingLinked) { <p>Linked employees manage their email through their own account settings.</p> }
+                    <div class="form-field"><label for="edit-start">Employment start date</label><InputDate id="edit-start" class="form-control" @bind-Value="editInput.EmploymentStartDate" /></div>
+                    <div class="form-field"><label for="edit-hours">Contracted weekly hours</label><InputNumber id="edit-hours" class="form-control" @bind-Value="editInput.WeeklyHours" min="1" max="168" /></div>
+                    <p>Existing leave history is preserved. Any unused invitation code will be revoked; generate a new code after saving.</p>
+                    <button type="submit" class="button-primary" disabled="@isManagingEmployee">Save changes</button>
+                    <button type="button" class="button-primary" disabled="@isManagingEmployee" @onclick="CancelManagement">Cancel</button>
+                </EditForm>
+            </section>
+        }
+        @if (removingEmployee is not null)
+        {
+            <section class="panel" aria-label="Confirm employee removal">
+                <h2>Remove @removingEmployee.EmployeeName?</h2>
+                <p>This archives the employee and prevents new leave requests and invitations. Existing leave records remain available for review.</p>
+                <button type="button" class="button-primary" disabled="@isManagingEmployee" @onclick="RemoveEmployee">Confirm removal</button>
+                <button type="button" class="button-primary" disabled="@isManagingEmployee" @onclick="CancelManagement">Cancel</button>
+            </section>
+        }
         <p class="form-footnote" style="margin-top:16px">Employee invitation codes must be shared privately. Contract uploads, payroll integrations, and legally verified leave policies are not yet enabled. Email alerts work only when SMTP is configured on the server.</p>
     }
 </div>
@@ -189,7 +222,7 @@
         var staff = await db.EmploymentRecords.Include(x => x.Organization)
             .Where(x => organizationIds.Contains(x.OrganizationId))
             .OrderBy(x => x.EmployeeName).ToListAsync();
-        employmentRecords.AddRange(staff.Select(x => new EmploymentView(x.Id, x.EmployeeName, x.EmployeeEmail, x.Organization.Name, x.EmploymentStartDate, x.Status, !string.IsNullOrWhiteSpace(x.EmployeeUserId))));
+        employmentRecords.AddRange(staff.Select(x => new EmploymentView(x.Id, x.EmployeeName, x.EmployeeEmail, x.Organization.Name, x.EmploymentStartDate, x.Status, !string.IsNullOrWhiteSpace(x.EmployeeUserId), x.WeeklyHours)));
 
         var pending = await db.LeaveRequests
             .Include(x => x.EmploymentRecord).ThenInclude(x => x.Organization)
@@ -354,6 +387,42 @@
         finally { isSavingEmployee = false; }
     }
 
+    private Guid? editingId;
+    private bool editingLinked;
+    private bool isManagingEmployee;
+    private EmploymentView? removingEmployee;
+    private EmployeeEditInput editInput = new();
+    private void CancelManagement() { editingId = null; removingEmployee = null; }
+    private void BeginEdit(EmploymentView employee)
+    {
+        removingEmployee = null;
+        editingId = employee.Id;
+        editingLinked = employee.IsLinked;
+        editInput = new() { EmployeeName = employee.EmployeeName, EmployeeEmail = employee.EmployeeEmail, EmploymentStartDate = employee.EmploymentStartDate, WeeklyHours = employee.WeeklyHours };
+    }
+    private void BeginRemove(EmploymentView employee) { editingId = null; removingEmployee = employee; }
+    private Task SaveEmployee() => ManageEmployee(editingId, editInput);
+    private Task RemoveEmployee() => ManageEmployee(removingEmployee?.Id, null);
+    private async Task ManageEmployee(Guid? id, EmployeeEditInput? changes)
+    {
+        if (id is null || isManagingEmployee || string.IsNullOrWhiteSpace(userId)) return;
+        isManagingEmployee = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var error = await EmployeeManagementService.SaveAsync(db, id.Value, userId, changes);
+            message = error ?? (changes is null ? "Employee removed from active staff." : "Employee details saved.");
+            messageDetail = error is null ? "Leave history has been preserved." : "Review the details and try again.";
+            if (error is null) { inviteCodes.Remove(id.Value); CancelManagement(); await LoadData(); }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Employee management failed for {EmployeeId}", id);
+            message = "The employee change could not be confirmed.";
+            messageDetail = "Reload the employee list before trying again.";
+        }
+        finally { isManagingEmployee = false; }
+    }
     private sealed class WorkspaceInput
     {
         [Required, StringLength(160, MinimumLength = 2)] public string Name { get; set; } = "";
@@ -369,5 +438,5 @@
     }
     private sealed record PendingPreview(string EmployeeName, string OrganizationName, string LeaveType, DateOnly StartDate, DateOnly EndDate);
     private sealed record OrganizationOption(Guid Id, string Name, string CountryCode);
-    private sealed record EmploymentView(Guid Id, string EmployeeName, string EmployeeEmail, string OrganizationName, DateOnly EmploymentStartDate, string Status, bool IsLinked);
+    private sealed record EmploymentView(Guid Id, string EmployeeName, string EmployeeEmail, string OrganizationName, DateOnly EmploymentStartDate, string Status, bool IsLinked, decimal WeeklyHours);
 }

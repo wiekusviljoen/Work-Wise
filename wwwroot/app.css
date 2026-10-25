@@ -151,3 +151,6 @@ html,body{background:#f3f6fa;color:#14283e}
   .mobile-nav-signout button.nav-link:hover{background:#193650;color:#fff}
   .mobile-nav-signout button.nav-link:focus-visible{outline:2px solid #56c99a;outline-offset:-2px}
 }
+
+.employee-actions{display:flex;flex-wrap:wrap;gap:8px}
+@media(max-width:760px){.workspace-item:has(.employee-actions){flex-wrap:wrap}.employee-actions{width:100%}}
