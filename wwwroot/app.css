@@ -142,13 +142,12 @@ html,body{background:#f3f6fa;color:#14283e}
 .ww-float-icon svg{width:62%;height:62%}
 .ww-bottom-symbol svg{width:60%;height:60%}
 
-/* Keep sign out accessible outside the collapsed mobile navigation. */
-.topbar-logout{margin:0;flex-shrink:0}
-.topbar-logout button{min-height:44px;padding:10px 16px;border:1px solid var(--green);border-radius:9px;background:var(--green);color:#fff;font-weight:700;white-space:nowrap;cursor:pointer}
-.topbar-logout button:hover{background:var(--green-dark)}
-.topbar-logout button:focus-visible{outline:3px solid #56c99a;outline-offset:3px}
+/* Sign out is the last item in the mobile navigation dropdown. */
+.mobile-nav-signout{display:none}
 @media(max-width:760px){
-  .app-topbar{display:flex;height:auto;min-height:60px;padding:8px 14px;justify-content:flex-end}
-  .app-topbar .topbar-context,.app-topbar .country-chip{display:none}
-  .topbar-right{gap:12px}
+  .mobile-nav-signout{display:block;border-top:1px solid #35516a;margin-top:5px;padding-top:5px}
+  .mobile-nav-signout form{margin:0}
+  .mobile-nav-signout button.nav-link{width:100%;border:0;background:transparent;color:#f3f7fb;font-weight:700;cursor:pointer}
+  .mobile-nav-signout button.nav-link:hover{background:#193650;color:#fff}
+  .mobile-nav-signout button.nav-link:focus-visible{outline:2px solid #56c99a;outline-offset:-2px}
 }
