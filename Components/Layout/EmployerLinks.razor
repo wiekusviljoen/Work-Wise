@@ -1,0 +1,24 @@
+@using System.Security.Claims
+@using Microsoft.EntityFrameworkCore
+@using LeaveWise.Data
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+
+@if (isOwner)
+{
+    <div class="nav-item"><NavLink class="nav-link" href="workspace">Employer workspace</NavLink></div>
+    <div class="nav-item"><NavLink class="nav-link" href="approvals">Leave approvals</NavLink></div>
+    <div class="nav-item"><NavLink class="nav-link" href="policies">Policies & balances</NavLink></div>
+}
+
+@code {
+    private bool isOwner;
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var id = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(id)) return;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        isOwner = await db.OrganizationMemberships.AnyAsync(x => x.UserId == id && x.IsActive && x.Role == "Owner");
+    }
+}

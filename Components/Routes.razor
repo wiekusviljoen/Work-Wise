@@ -2,8 +2,15 @@
 <Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)">
     <Found Context="routeData">
         <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
-            <NotAuthorized>
-                <RedirectToLogin />
+            <NotAuthorized Context="authContext">
+                @if (authContext.User.Identity?.IsAuthenticated == true)
+                {
+                    <section class="panel"><h1>Access denied</h1><p>This section is available only to authorized employers.</p><a href="leave">Return to leave &amp; absences</a></section>
+                }
+                else
+                {
+                    <RedirectToLogin />
+                }
             </NotAuthorized>
         </AuthorizeRouteView>
         <FocusOnNavigate RouteData="routeData" Selector="h1" />

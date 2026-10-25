@@ -1,5 +1,5 @@
 @page "/approvals"
-@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy = "EmployerOnly")]
 @using System.Security.Claims
 @using Microsoft.EntityFrameworkCore
 @using LeaveWise.Data

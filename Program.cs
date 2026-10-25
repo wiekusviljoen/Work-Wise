@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using LeaveWise.Components;
@@ -12,6 +13,8 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 builder.Services.AddCascadingAuthenticationState();
+builder.Services.AddAuthorization(options => options.AddPolicy("EmployerOnly", policy => policy.RequireAuthenticatedUser().AddRequirements(new LeaveWise.Domain.EmployerRequirement())));
+builder.Services.AddScoped<IAuthorizationHandler, LeaveWise.Domain.EmployerAuthorizationHandler>();
 builder.Services.AddScoped<IdentityRedirectManager>();
 builder.Services.AddScoped<AuthenticationStateProvider, IdentityRevalidatingAuthenticationStateProvider>();
 
