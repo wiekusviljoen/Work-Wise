@@ -3,9 +3,12 @@
 @using System.ComponentModel.DataAnnotations
 @using Microsoft.AspNetCore.Authentication
 @using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
 @using LeaveWise.Data
+@using LeaveWise.Domain
 
 @inject UserManager<ApplicationUser> UserManager
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject SignInManager<ApplicationUser> SignInManager
 @inject ILogger<Login> Logger
 @inject NavigationManager NavigationManager
@@ -20,7 +23,16 @@
             <StatusMessage Message="@errorMessage" />
             <EditForm EditContext="editContext" method="post" OnSubmit="LoginUser" FormName="login">
                 <DataAnnotationsValidator />
-                <h2>Use a local account to log in.</h2>
+                <h2>Sign in to your account</h2>
+                <p>Employers and employees sign in with separate email addresses.</p>
+                <div class="mb-3">
+                    <label class="form-label" for="account-type">I am signing in as</label>
+                    <InputSelect id="account-type" class="form-control" @bind-Value="Input.AccountType">
+                        <option value="Employee">Employee — request leave</option>
+                        <option value="Employer">Employer — review leave requests</option>
+                    </InputSelect>
+                    <ValidationMessage For="() => Input.AccountType" class="text-danger" />
+                </div>
                 <hr />
                 <ValidationSummary class="text-danger" role="alert" />
                 <div class="form-floating mb-3">
@@ -99,6 +111,12 @@
 
     public async Task LoginUser()
     {
+        if (Input.AccountType is not (AccountAccessService.Employee or AccountAccessService.Employer))
+        {
+            errorMessage = "Choose Employee or Employer before signing in.";
+            return;
+        }
+
         if (!string.IsNullOrEmpty(Input.Passkey?.Error))
         {
             errorMessage = $"Error: {Input.Passkey.Error}";
@@ -126,8 +144,33 @@
 
         if (result.Succeeded)
         {
-            Logger.LogInformation("User logged in.");
-            RedirectManager.RedirectTo(ReturnUrl);
+            var user = await UserManager.FindByEmailAsync(Input.Email.Trim());
+            if (user is null)
+            {
+                await SignInManager.SignOutAsync();
+                errorMessage = "This account could not be verified. Please sign in again.";
+                return;
+            }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var access = await AccountAccessService.GetAsync(db, user.Id);
+            var employerSignIn = Input.AccountType == AccountAccessService.Employer;
+            if (employerSignIn && !access.CanUseEmployerWorkspace)
+            {
+                await SignInManager.SignOutAsync();
+                errorMessage = "This email is not registered as an employer. Use the employer account or choose Employee.";
+                return;
+            }
+            if (!employerSignIn && (access.CanUseEmployerWorkspace || !access.IsEmployee))
+            {
+                await SignInManager.SignOutAsync();
+                errorMessage = "This email is not registered as an employee. Choose Employer or use your employee account.";
+                return;
+            }
+
+            Logger.LogInformation("User logged in to {AccountType} workspace.", Input.AccountType);
+            var landing = employerSignIn ? (access.IsOwner ? "approvals" : "workspace") : "leave";
+            RedirectManager.RedirectTo(string.IsNullOrWhiteSpace(ReturnUrl) || ReturnUrl == "/" ? landing : ReturnUrl);
         }
         else if (result.RequiresTwoFactor)
         {
@@ -148,6 +191,9 @@
 
     private sealed class InputModel
     {
+        [Required]
+        public string AccountType { get; set; } = AccountAccessService.Employee;
+
         [Required]
         [EmailAddress]
         public string Email { get; set; } = "";

@@ -2,6 +2,8 @@
 
 @using System.ComponentModel.DataAnnotations
 @using System.Security.Claims
+@using Microsoft.EntityFrameworkCore
+@using LeaveWise.Domain
 @using System.Text
 @using System.Text.Encodings.Web
 @using Microsoft.AspNetCore.Identity
@@ -9,6 +11,7 @@
 @using LeaveWise.Data
 
 @inject SignInManager<ApplicationUser> SignInManager
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject UserManager<ApplicationUser> UserManager
 @inject IUserStore<ApplicationUser> UserStore
 @inject IEmailSender<ApplicationUser> EmailSender
@@ -38,6 +41,15 @@
                 <InputText @bind-Value="Input.Email" id="Input.Email" class="form-control" autocomplete="email" placeholder="Please enter your email." />
                 <label for="Input.Email" class="form-label">Email</label>
                 <ValidationMessage For="() => Input.Email" />
+            </div>
+            <div class="mb-3">
+                <label for="external-account-type" class="form-label">Register as</label>
+                <InputSelect id="external-account-type" class="form-control" @bind-Value="Input.AccountType">
+                    <option value="">Choose account type</option>
+                    <option value="Employee">Employee</option>
+                    <option value="Employer">Employer</option>
+                </InputSelect>
+                <ValidationMessage For="() => Input.AccountType" />
             </div>
             <button type="submit" class="w-100 btn btn-lg btn-primary">Register</button>
         </EditForm>
@@ -121,7 +133,12 @@
                 "{Name} logged in with {LoginProvider} provider.",
                 externalLoginInfo.Principal.Identity?.Name,
                 externalLoginInfo.LoginProvider);
-            RedirectManager.RedirectTo(ReturnUrl);
+            var existingUser = await UserManager.FindByLoginAsync(externalLoginInfo.LoginProvider, externalLoginInfo.ProviderKey);
+            if (existingUser is null) RedirectManager.RedirectTo(ReturnUrl);
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var access = await AccountAccessService.GetAsync(db, existingUser!.Id);
+            var landing = access.IsOwner ? "approvals" : access.CanUseEmployerWorkspace ? "workspace" : "leave";
+            RedirectManager.RedirectTo(string.IsNullOrWhiteSpace(ReturnUrl) || ReturnUrl == "/" ? landing : ReturnUrl);
             return;
         }
         else if (result.IsLockedOut)
@@ -139,6 +156,11 @@
 
     private async Task OnValidSubmitAsync()
     {
+        if (Input.AccountType is not (AccountAccessService.Employee or AccountAccessService.Employer))
+        {
+            message = "Choose Employee or Employer before registering.";
+            return;
+        }
         if (externalLoginInfo is null)
         {
             RedirectManager.RedirectToWithStatus("Account/Login", "Error loading external login information during confirmation.", HttpContext);
@@ -157,6 +179,13 @@
             result = await UserManager.AddLoginAsync(user, externalLoginInfo);
             if (result.Succeeded)
             {
+                result = await UserManager.AddClaimAsync(user, new Claim(AccountAccessService.AccountTypeClaim, Input.AccountType));
+                if (!result.Succeeded)
+                {
+                    await UserManager.DeleteAsync(user);
+                    message = "Could not save the account type. Please try registering again.";
+                    return;
+                }
                 Logger.LogInformation("User created an account using {Name} provider.", externalLoginInfo.LoginProvider);
 
                 var userId = await UserManager.GetUserIdAsync(user);
@@ -176,7 +205,8 @@
                 else
                 {
                     await SignInManager.SignInAsync(user, isPersistent: false, externalLoginInfo.LoginProvider);
-                    RedirectManager.RedirectTo(ReturnUrl);
+                    var landing = Input.AccountType == AccountAccessService.Employer ? "workspace" : "leave";
+                    RedirectManager.RedirectTo(string.IsNullOrWhiteSpace(ReturnUrl) || ReturnUrl == "/" ? landing : ReturnUrl);
                 }
             }
         }
@@ -210,6 +240,9 @@
 
     private sealed class InputModel
     {
+        [Required(ErrorMessage = "Choose your account type.")]
+        public string AccountType { get; set; } = "";
+
         [Required]
         [EmailAddress]
         public string Email { get; set; } = "";

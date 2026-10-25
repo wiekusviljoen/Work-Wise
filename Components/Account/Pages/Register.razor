@@ -2,6 +2,8 @@
 
 @using System.ComponentModel.DataAnnotations
 @using System.Text
+@using System.Security.Claims
+@using LeaveWise.Domain
 @using System.Text.Encodings.Web
 @using Microsoft.AspNetCore.Identity
 @using Microsoft.AspNetCore.WebUtilities
@@ -25,6 +27,16 @@
         <EditForm Model="Input" method="post" OnValidSubmit="RegisterUser" FormName="register">
             <DataAnnotationsValidator />
             <h2>Create a new account.</h2>
+            <p>Choose your account type. Employers manage their company; employees submit requests using a different email address.</p>
+            <div class="mb-3">
+                <label class="form-label" for="register-account-type">Register as</label>
+                <InputSelect id="register-account-type" class="form-control" @bind-Value="Input.AccountType">
+                    <option value="">Choose account type</option>
+                    <option value="Employee">Employee</option>
+                    <option value="Employer">Employer</option>
+                </InputSelect>
+                <ValidationMessage For="() => Input.AccountType" class="text-danger" />
+            </div>
             <hr />
             <ValidationSummary class="text-danger" role="alert" />
             <div class="form-floating mb-3">
@@ -72,6 +84,12 @@
 
     public async Task RegisterUser(EditContext editContext)
     {
+        if (Input.AccountType is not (AccountAccessService.Employee or AccountAccessService.Employer))
+        {
+            identityErrors = [new IdentityError { Description = "Choose Employee or Employer." }];
+            return;
+        }
+
         var user = CreateUser();
 
         await UserStore.SetUserNameAsync(user, Input.Email, CancellationToken.None);
@@ -85,7 +103,16 @@
             return;
         }
 
-        Logger.LogInformation("User created a new account with password.");
+        var roleResult = await UserManager.AddClaimAsync(user,
+            new Claim(AccountAccessService.AccountTypeClaim, Input.AccountType));
+        if (!roleResult.Succeeded)
+        {
+            await UserManager.DeleteAsync(user);
+            identityErrors = roleResult.Errors;
+            return;
+        }
+
+        Logger.LogInformation("User created a new {AccountType} account with password.", Input.AccountType);
 
         var userId = await UserManager.GetUserIdAsync(user);
         var code = await UserManager.GenerateEmailConfirmationTokenAsync(user);
@@ -105,7 +132,8 @@
         else
         {
             await SignInManager.SignInAsync(user, isPersistent: false);
-            RedirectManager.RedirectTo(ReturnUrl);
+            var landing = Input.AccountType == AccountAccessService.Employer ? "workspace" : "leave";
+            RedirectManager.RedirectTo(string.IsNullOrWhiteSpace(ReturnUrl) || ReturnUrl == "/" ? landing : ReturnUrl);
         }
     }
 
@@ -133,6 +161,9 @@
 
     private sealed class InputModel
     {
+        [Required(ErrorMessage = "Choose whether you are an employee or employer.")]
+        public string AccountType { get; set; } = "";
+
         [Required]
         [EmailAddress]
         [Display(Name = "Email")]

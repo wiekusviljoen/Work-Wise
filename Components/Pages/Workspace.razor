@@ -1,5 +1,5 @@
 @page "/workspace"
-@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy = "EmployerAccount")]
 @using System.ComponentModel.DataAnnotations
 @using System.Security.Claims
 @using Microsoft.EntityFrameworkCore
@@ -26,6 +26,28 @@
     }
     else
     {
+        @if (ownedOrganizations.Count > 0)
+        {
+            <section class="panel" style="margin-bottom:24px">
+                <div class="panel-heading"><div><p class="eyebrow">EMPLOYER INBOX</p><h2>Pending leave requests</h2></div><span class="count-chip">@pendingRequests.Count</span></div>
+                @if (pendingRequests.Count == 0)
+                {
+                    <p>No leave requests are awaiting your decision.</p>
+                }
+                else
+                {
+                    @foreach (var pending in pendingRequests)
+                    {
+                        <div class="workspace-item">
+                            <div class="workspace-item-main"><strong>@pending.EmployeeName — @pending.LeaveType</strong><small>@pending.OrganizationName · @pending.StartDate.ToString("dd MMM yyyy") – @pending.EndDate.ToString("dd MMM yyyy")</small></div>
+                            <span class="status-label status-pending">Pending</span>
+                        </div>
+                    }
+                    <p class="form-footnote">Approve or decline requests in Leave approvals. Annual and other paid leave requests need a configured policy before approval.</p>
+                }
+                <a class="button-primary" href="approvals">Review leave requests →</a>
+            </section>
+        }
         <div class="workspace-grid">
             <section class="panel">
                 <div class="panel-heading"><div><p class="eyebrow">NEW ORGANIZATION</p><h2>Create a company workspace</h2></div><span class="panel-icon">INFO</span></div>
@@ -112,7 +134,7 @@
                 }
             }
         </section>
-        <p class="form-footnote" style="margin-top:16px">Email delivery, contract uploads, payroll integrations and legally verified leave policies are not enabled yet. Share invitation codes privately and keep employee data minimal while testing.</p>
+        <p class="form-footnote" style="margin-top:16px">Employee invitation codes must be shared privately. Contract uploads, payroll integrations, and legally verified leave policies are not yet enabled. Email alerts work only when SMTP is configured on the server.</p>
     }
 </div>
 
@@ -122,6 +144,7 @@
     private readonly List<OrganizationMembership> memberships = new();
     private readonly List<OrganizationOption> ownedOrganizations = new();
     private readonly List<EmploymentView> employmentRecords = new();
+    private readonly List<PendingPreview> pendingRequests = new();
     private readonly Dictionary<Guid, string> inviteCodes = new();
     private string? userId;
     private bool isLoading = true;
@@ -149,6 +172,7 @@
         memberships.Clear();
         ownedOrganizations.Clear();
         employmentRecords.Clear();
+        pendingRequests.Clear();
         await using var db = await DbFactory.CreateDbContextAsync();
         var rows = await db.OrganizationMemberships.Include(x => x.Organization)
             .Where(x => x.UserId == userId && x.IsActive)
@@ -166,6 +190,14 @@
             .Where(x => organizationIds.Contains(x.OrganizationId))
             .OrderBy(x => x.EmployeeName).ToListAsync();
         employmentRecords.AddRange(staff.Select(x => new EmploymentView(x.Id, x.EmployeeName, x.EmployeeEmail, x.Organization.Name, x.EmploymentStartDate, x.Status, !string.IsNullOrWhiteSpace(x.EmployeeUserId))));
+
+        var pending = await db.LeaveRequests
+            .Include(x => x.EmploymentRecord).ThenInclude(x => x.Organization)
+            .Where(x => organizationIds.Contains(x.EmploymentRecord.OrganizationId) && x.Status == "Pending")
+            .OrderBy(x => x.StartDate).ThenBy(x => x.RequestedUtc).Take(20).ToListAsync();
+        pendingRequests.AddRange(pending.Select(x => new PendingPreview(
+            x.EmploymentRecord.EmployeeName, x.EmploymentRecord.Organization.Name,
+            x.LeaveType, x.StartDate, x.EndDate)));
     }
 
     private async Task CreateWorkspace()
@@ -263,6 +295,17 @@
                 return;
             }
             var email = employeeInput.EmployeeEmail.Trim().ToLowerInvariant();
+            var employerEmail = await db.OrganizationMemberships
+                .Where(x => x.OrganizationId == organization.Id && x.IsActive && x.Role == "Owner")
+                .Join(db.Users, membership => membership.UserId, user => user.Id,
+                    (membership, user) => user.Email)
+                .AnyAsync(ownerEmail => ownerEmail != null && ownerEmail.ToLower() == email);
+            if (employerEmail)
+            {
+                message = "The employee and employer must use different email addresses.";
+                messageDetail = "Use the employee's own account email, not an employer account address.";
+                return;
+            }
             var exists = await db.EmploymentRecords.AnyAsync(x => x.OrganizationId == organization.Id && x.EmployeeEmail.ToLower() == email && x.Status == "Active");
             if (exists)
             {
@@ -324,6 +367,7 @@
         [Required] public DateOnly EmploymentStartDate { get; set; } = DateOnly.FromDateTime(DateTime.Today);
         [Range(1, 168)] public decimal WeeklyHours { get; set; } = 45m;
     }
+    private sealed record PendingPreview(string EmployeeName, string OrganizationName, string LeaveType, DateOnly StartDate, DateOnly EndDate);
     private sealed record OrganizationOption(Guid Id, string Name, string CountryCode);
     private sealed record EmploymentView(Guid Id, string EmployeeName, string EmployeeEmail, string OrganizationName, DateOnly EmploymentStartDate, string Status, bool IsLinked);
 }

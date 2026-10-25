@@ -1,5 +1,10 @@
 @page "/"
 @attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+@using System.Security.Claims
+@using LeaveWise.Data
+@using LeaveWise.Domain
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject Microsoft.EntityFrameworkCore.IDbContextFactory<ApplicationDbContext> DbFactory
 <PageTitle>Work-Wise | Your work, clearly organised</PageTitle>
 <div class="ww-dashboard">
   <section class="ww-hero">
@@ -11,7 +16,7 @@
       </AuthorizeView>
       <div class="ww-hero-actions">
         <AuthorizeView>
-          <Authorized><a class="ww-btn-primary" href="leave">Open leave centre <span aria-hidden="true">↗</span></a><a class="ww-btn-ghost" href="workspace">Employer workspace</a></Authorized>
+          <Authorized><a class="ww-btn-primary" href="leave">Open leave centre <span aria-hidden="true">↗</span></a>@if (isEmployer) { <a class="ww-btn-ghost" href="@(isOwner ? "approvals" : "workspace")">@(isOwner ? "Review leave approvals" : "Employer workspace")</a> }</Authorized>
           <NotAuthorized><a class="ww-btn-primary" href="Account/Register">Create your account <span aria-hidden="true">↗</span></a><a class="ww-btn-ghost" href="Account/Login">Sign in</a></NotAuthorized>
         </AuthorizeView>
       </div>
@@ -29,10 +34,31 @@
     <a class="ww-tool-card" href="leave"><div class="ww-tool-top"><span class="ww-tool-icon ww-icon-blue" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="4.5" width="14" height="16" rx="2"/><path d="M9 4.5v-1h6v1M8.5 10h7M8.5 13.5h7M8.5 17h4"/></svg></span><span class="ww-tool-arrow">-></span></div><span class="ww-tool-label">TIME AWAY</span><h3>Leave & absences</h3><p>Submit leave requests, follow decisions and review the information available for your workplace.</p><span class="ww-card-link">Open leave centre <span>→</span></span></a>
     <a class="ww-tool-card" href="contracts"><div class="ww-tool-top"><span class="ww-tool-icon ww-icon-violet" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 3.75h7l4 4V20.25H7z"/><path d="M14 3.75v4h4M10 12h5M10 15.5h5"/></svg></span><span class="ww-tool-arrow">-></span></div><span class="ww-tool-label">EMPLOYMENT DETAILS</span><h3>Contracts & records</h3><p>Keep employment information in view and see what document tools are currently available.</p><span class="ww-card-link">View contract tools <span>→</span></span></a>
     <a class="ww-tool-card" href="benefits"><div class="ww-tool-top"><span class="ww-tool-icon ww-icon-amber" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="6" width="17" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6.5 9v.01M17.5 15v.01"/></svg></span><span class="ww-tool-arrow">-></span></div><span class="ww-tool-label">TOTAL REWARDS</span><h3>Pay & benefits</h3><p>Explore benefit information and understand which figures are examples versus confirmed records.</p><span class="ww-card-link">Explore benefits <span>→</span></span></a>
+    @if (isEmployer)
+    {
     <a class="ww-tool-card" href="team"><div class="ww-tool-top"><span class="ww-tool-icon ww-icon-green" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3.5 19v-1.5a5.5 5.5 0 0 1 11 0V19z"/><path d="M16 5.5a3 3 0 0 1 0 5.8M17 14a4 4 0 0 1 3.5 4v1"/></svg></span><span class="ww-tool-arrow">-></span></div><span class="ww-tool-label">PEOPLE & TEAMS</span><h3>Team workspace</h3><p>Set up a company workspace and manage the employment records supported by the current version.</p><span class="ww-card-link">Open team tools <span>→</span></span></a>
+    }
+    @if (isOwner)
+    {
     <a class="ww-tool-card" href="approvals"><div class="ww-tool-top"><span class="ww-tool-icon ww-icon-green" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3.5 19v-1.5a5.5 5.5 0 0 1 11 0V19z"/><path d="M16 5.5a3 3 0 0 1 0 5.8M17 14a4 4 0 0 1 3.5 4v1"/></svg></span><span class="ww-tool-arrow">-></span></div><span class="ww-tool-label">FOR MANAGERS</span><h3>Leave approvals</h3><p>Review submitted requests and record decisions where your account has the required access.</p><span class="ww-card-link">Review approvals <span>→</span></span></a>
     <a class="ww-tool-card" href="policies"><div class="ww-tool-top"><span class="ww-tool-icon ww-icon-blue" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="4.5" width="14" height="16" rx="2"/><path d="M9 4.5v-1h6v1M8.5 10h7M8.5 13.5h7M8.5 17h4"/></svg></span><span class="ww-tool-arrow">-></span></div><span class="ww-tool-label">POLICY & GUIDANCE</span><h3>Rules & balances</h3><p>Review policy information, source-linked references and configured leave balances.</p><span class="ww-card-link">View policies <span>→</span></span></a>
+    }
   </section>
   <section class="ww-bottom-band"><div class="ww-bottom-symbol">OK</div><div class="ww-bottom-copy"><strong>Clarity first. Important details stay visible.</strong><p>Work-Wise is an early-access tool, not a payroll or legal-compliance system. Review source material and confirm decisions where needed.</p></div><a href="rules" class="ww-bottom-link">Explore guidance <span>→</span></a></section>
   <footer class="ww-footer"><span>© 2026 Work-Wise</span><span>Clear records. Better conversations.</span></footer>
 </div>
+
+@code {
+    private bool isEmployer;
+    private bool isOwner;
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var id = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(id)) return;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var access = await AccountAccessService.GetAsync(db, id);
+        isEmployer = access.CanUseEmployerWorkspace;
+        isOwner = access.IsOwner;
+    }
+}

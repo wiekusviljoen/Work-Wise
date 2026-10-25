@@ -13,8 +13,13 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 builder.Services.AddCascadingAuthenticationState();
-builder.Services.AddAuthorization(options => options.AddPolicy("EmployerOnly", policy => policy.RequireAuthenticatedUser().AddRequirements(new LeaveWise.Domain.EmployerRequirement())));
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("EmployerOnly", policy => policy.RequireAuthenticatedUser().AddRequirements(new LeaveWise.Domain.EmployerRequirement()));
+    options.AddPolicy("EmployerAccount", policy => policy.RequireAuthenticatedUser().AddRequirements(new LeaveWise.Domain.EmployerAccountRequirement()));
+});
 builder.Services.AddScoped<IAuthorizationHandler, LeaveWise.Domain.EmployerAuthorizationHandler>();
+builder.Services.AddScoped<IAuthorizationHandler, LeaveWise.Domain.EmployerAccountAuthorizationHandler>();
 builder.Services.AddScoped<IdentityRedirectManager>();
 builder.Services.AddScoped<AuthenticationStateProvider, IdentityRevalidatingAuthenticationStateProvider>();
 
