@@ -169,8 +169,7 @@
             }
 
             Logger.LogInformation("User logged in to {AccountType} workspace.", Input.AccountType);
-            var landing = employerSignIn ? (access.IsOwner ? "approvals" : "workspace") : "leave";
-            RedirectManager.RedirectTo(string.IsNullOrWhiteSpace(ReturnUrl) || ReturnUrl == "/" ? landing : ReturnUrl);
+            RedirectManager.RedirectTo(AccountLandingService.Resolve(access, ReturnUrl));
         }
         else if (result.RequiresTwoFactor)
         {

@@ -132,8 +132,12 @@
         else
         {
             await SignInManager.SignInAsync(user, isPersistent: false);
-            var landing = Input.AccountType == AccountAccessService.Employer ? "workspace" : "leave";
-            RedirectManager.RedirectTo(string.IsNullOrWhiteSpace(ReturnUrl) || ReturnUrl == "/" ? landing : ReturnUrl);
+            // A newly registered employer may set up a workspace, but cannot review
+            // approvals until they actually own an organization.
+            var access = Input.AccountType == AccountAccessService.Employer
+                ? new AccountAccessService.Access(true, false, false)
+                : new AccountAccessService.Access(false, false, true);
+            RedirectManager.RedirectTo(AccountLandingService.Resolve(access, ReturnUrl));
         }
     }
 

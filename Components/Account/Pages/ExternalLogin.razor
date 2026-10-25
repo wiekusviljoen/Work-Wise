@@ -134,11 +134,15 @@
                 externalLoginInfo.Principal.Identity?.Name,
                 externalLoginInfo.LoginProvider);
             var existingUser = await UserManager.FindByLoginAsync(externalLoginInfo.LoginProvider, externalLoginInfo.ProviderKey);
-            if (existingUser is null) RedirectManager.RedirectTo(ReturnUrl);
+            if (existingUser is null)
+            {
+                await SignInManager.SignOutAsync();
+                RedirectManager.RedirectTo("Account/Login");
+                return;
+            }
             await using var db = await DbFactory.CreateDbContextAsync();
             var access = await AccountAccessService.GetAsync(db, existingUser!.Id);
-            var landing = access.IsOwner ? "approvals" : access.CanUseEmployerWorkspace ? "workspace" : "leave";
-            RedirectManager.RedirectTo(string.IsNullOrWhiteSpace(ReturnUrl) || ReturnUrl == "/" ? landing : ReturnUrl);
+            RedirectManager.RedirectTo(AccountLandingService.Resolve(access, ReturnUrl));
             return;
         }
         else if (result.IsLockedOut)
@@ -205,8 +209,10 @@
                 else
                 {
                     await SignInManager.SignInAsync(user, isPersistent: false, externalLoginInfo.LoginProvider);
-                    var landing = Input.AccountType == AccountAccessService.Employer ? "workspace" : "leave";
-                    RedirectManager.RedirectTo(string.IsNullOrWhiteSpace(ReturnUrl) || ReturnUrl == "/" ? landing : ReturnUrl);
+                    var access = Input.AccountType == AccountAccessService.Employer
+                        ? new AccountAccessService.Access(true, false, false)
+                        : new AccountAccessService.Access(false, false, true);
+                    RedirectManager.RedirectTo(AccountLandingService.Resolve(access, ReturnUrl));
                 }
             }
         }

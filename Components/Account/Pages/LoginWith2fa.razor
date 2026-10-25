@@ -2,8 +2,11 @@
 
 @using System.ComponentModel.DataAnnotations
 @using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
 @using LeaveWise.Data
+@using LeaveWise.Domain
 
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject SignInManager<ApplicationUser> SignInManager
 @inject UserManager<ApplicationUser> UserManager
 @inject IdentityRedirectManager RedirectManager
@@ -75,7 +78,9 @@
         if (result.Succeeded)
         {
             Logger.LogInformation("User with ID '{UserId}' logged in with 2fa.", userId);
-            RedirectManager.RedirectTo(ReturnUrl);
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var access = await AccountAccessService.GetAsync(db, userId);
+            RedirectManager.RedirectTo(AccountLandingService.Resolve(access, ReturnUrl));
         }
         else if (result.IsLockedOut)
         {
