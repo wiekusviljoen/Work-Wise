@@ -1,0 +1,131 @@
+@page "/leave"
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@attribute [Authorize]
+@inject LeaveWise.Services.LeaveCalculationService Calculator
+@inject LeaveWise.Data.ApplicationDbContext Db
+@inject AuthenticationStateProvider AuthStateProvider
+<PageTitle>Leave & requests | Work-Wise</PageTitle>
+<div class="ww-page">
+    <div class="page-title-row"><div><div class="eyebrow">TIME OFF, MADE SIMPLE</div><h1>Leave & requests<span class="accent-dot">.</span></h1><p>Record time off and see how working days are counted.</p></div></div>
+    @if (profileId is null)
+    {
+        <div class="ww-panel"><h2>Set up your workspace first</h2><p>Work-Wise needs your country and working schedule before you can submit a leave request.</p><a class="ww-button ww-button-primary" href="/setup">Set up workspace →</a></div>
+    }
+    else
+    {
+        <div class="ww-notice"><span>ⓘ</span><p>Requests are saved to your account. Approval notifications, public holidays and verified statutory policies are not connected yet; the working-day count is a preview only.</p></div>
+        <div class="ww-content-grid leave-layout">
+            <section class="ww-panel"><div class="panel-heading"><div><div class="eyebrow">NEW REQUEST</div><h2>Request time off</h2></div></div>
+                <EditForm Model="request" OnValidSubmit="SubmitRequestAsync">
+                    <DataAnnotationsValidator />
+                    <div class="form-field"><label for="leaveType">Type of leave</label><InputSelect id="leaveType" class="form-control ww-input" @bind-Value="request.LeaveType"><option value="Annual">Annual leave</option><option value="Sick">Sick leave</option><option value="Unpaid">Unpaid leave</option><option value="Family">Family responsibility / family leave</option><option value="Other">Other</option></InputSelect></div>
+                    <div class="form-two"><div class="form-field"><label for="start">First day</label><InputDate id="start" class="form-control ww-input" @bind-Value="request.StartDate" /></div><div class="form-field"><label for="end">Last day</label><InputDate id="end" class="form-control ww-input" @bind-Value="request.EndDate" /></div></div>
+                    <div class="form-field"><label for="notes">Note (optional)</label><InputTextArea id="notes" class="form-control ww-input" @bind-Value="request.Notes" placeholder="Add a note for your manager" rows="3" /></div>
+                    <button class="ww-button ww-button-primary" type="submit">Calculate & submit request →</button>
+                </EditForm>
+                @if (!string.IsNullOrWhiteSpace(message)) { <div class="ww-success">@message</div> }
+            </section>
+            <section class="ww-panel"><div class="panel-heading"><div><div class="eyebrow">YOUR PREVIEW</div><h2>Working-day calculation</h2></div><span class="panel-badge">Estimate</span></div>
+                @if (calculation is not null)
+                {
+                    <div class="calc-result"><span class="calc-number">@calculation.ChargeableDays</span><span>working day(s) in this range</span></div>
+                    <div class="calc-line"><span>Calendar days in range</span><strong>@calculation.CalendarDays</strong></div>
+                    <div class="calc-line"><span>Non-working days excluded</span><strong>@calculation.NonWorkDays</strong></div>
+                    <div class="calc-line"><span>Public holidays excluded</span><strong>No</strong></div>
+                    <div class="ww-notice compact-notice"><span>!</span><p>Country law, public holidays, sector rules, eligibility and contract clauses are not yet applied. An approval will not automatically change a leave balance in this preview release.</p></div>
+                }
+                else { <div class="empty-state"><div class="empty-symbol">◷</div><h3>Your dates, clearly counted</h3><p>Choose the first and last day, then submit to preview the number of working days.</p></div> }
+                <div class="request-list-heading">Your saved requests</div>
+                @if (savedRequests.Count == 0) { <p>No leave requests yet.</p> }
+                @foreach (var item in savedRequests)
+                {
+                    <div class="request-row"><div class="request-type-icon">◷</div><div class="request-row-copy"><strong>@item.LeaveType leave</strong><small>@item.StartDate.ToString("dd MMM") – @item.EndDate.ToString("dd MMM yyyy")</small></div><span class="request-status">@item.Status</span></div>
+                }
+            </section>
+        </div>
+    }
+</div>
+@code {
+    private Guid? profileId;
+    private Guid organizationId;
+    private string userId = "";
+    private LeaveRequestInput request = new();
+    private LeaveCalculationResult? calculation;
+    private string? message;
+    private List<LeaveWise.Data.LeaveRequestRecord> savedRequests = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        userId = state.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        if (string.IsNullOrEmpty(userId)) return;
+        var profile = await Db.EmployeeProfiles.AsNoTracking().FirstOrDefaultAsync(x => x.UserId == userId);
+        if (profile is null) return;
+        profileId = profile.Id;
+        organizationId = profile.OrganizationId;
+        request.CountryCode = profile.CountryCode;
+        request.Workweek = profile.OrdinaryDaysPerWeek;
+        await LoadRequestsAsync();
+    }
+
+    private async Task LoadRequestsAsync()
+    {
+        if (profileId is null) return;
+        savedRequests = await Db.LeaveRequests.AsNoTracking()
+            .Where(x => x.EmployeeProfileId == profileId.Value)
+            .OrderByDescending(x => x.CreatedAtUtc).Take(50).ToListAsync();
+    }
+
+    private async Task SubmitRequestAsync()
+    {
+        message = null;
+        if (profileId is null) { message = "Set up your workspace before requesting leave."; return; }
+        if (request.EndDate.Date < request.StartDate.Date) { message = "The last day must be on or after the first day."; calculation = null; return; }
+        if (request.EndDate.Date > request.StartDate.Date.AddYears(1)) { message = "A request cannot span more than one year."; calculation = null; return; }
+        if (request.Notes?.Length > 2000) { message = "Please shorten the note to 2,000 characters."; return; }
+        var stillOwned = await Db.EmployeeProfiles.AsNoTracking().AnyAsync(x => x.Id == profileId.Value && x.UserId == userId && x.OrganizationId == organizationId);
+        if (!stillOwned) { message = "Your employment profile could not be verified."; return; }
+        var overlaps = await Db.LeaveRequests.AsNoTracking().AnyAsync(x => x.EmployeeProfileId == profileId.Value && x.Status != "Declined" && x.StartDate <= DateOnly.FromDateTime(request.EndDate) && x.EndDate >= DateOnly.FromDateTime(request.StartDate));
+        if (overlaps) { message = "You already have a pending or approved request overlapping these dates."; return; }
+        var calendarDays = (request.EndDate.Date - request.StartDate.Date).Days + 1;
+        var days = Calculator.CountWorkingDays(request.StartDate, request.EndDate, request.Workweek);
+        calculation = new LeaveCalculationResult(days, calendarDays, calendarDays - days);
+        var record = new LeaveWise.Data.LeaveRequestRecord
+        {
+            EmployeeProfileId = profileId.Value,
+            LeaveType = request.LeaveType,
+            StartDate = DateOnly.FromDateTime(request.StartDate),
+            EndDate = DateOnly.FromDateTime(request.EndDate),
+            RequestedWorkingDays = days,
+            Status = "Pending",
+            EmployeeNote = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim()
+        };
+        Db.LeaveRequests.Add(record);
+        Db.AuditEvents.Add(new LeaveWise.Data.AuditEvent
+        {
+            OrganizationId = organizationId,
+            ActorUserId = userId,
+            Action = "LeaveRequestSubmitted",
+            EntityType = "LeaveRequest",
+            EntityId = record.Id.ToString(),
+            DetailsJson = System.Text.Json.JsonSerializer.Serialize(new { record.LeaveType, record.StartDate, record.EndDate, record.RequestedWorkingDays })
+        });
+        await Db.SaveChangesAsync();
+        await LoadRequestsAsync();
+        message = "Your request has been saved. Email notifications and manager approval are not enabled yet.";
+    }
+
+    private sealed class LeaveRequestInput
+    {
+        public string LeaveType { get; set; } = "Annual";
+        public string CountryCode { get; set; } = "NA";
+        public DateTime StartDate { get; set; } = DateTime.Today.AddDays(1);
+        public DateTime EndDate { get; set; } = DateTime.Today.AddDays(1);
+        public int Workweek { get; set; } = 5;
+        public string? Notes { get; set; }
+    }
+    private sealed record LeaveCalculationResult(int ChargeableDays, int CalendarDays, int NonWorkDays);
+}

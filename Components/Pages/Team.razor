@@ -1,0 +1,92 @@
+@page "/team"
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@attribute [Authorize]
+@inject LeaveWise.Data.ApplicationDbContext Db
+@inject AuthenticationStateProvider AuthStateProvider
+<PageTitle>Team requests | Work-Wise</PageTitle>
+<div class="ww-page">
+    <div class="page-title-row"><div><div class="eyebrow">EMPLOYER WORKSPACE</div><h1>Team requests<span class="accent-dot">.</span></h1><p>Review requests from employees in your workspace.</p></div></div>
+    @if (!string.IsNullOrWhiteSpace(message)) { <div class="ww-notice"><span>ⓘ</span><p>@message</p></div> }
+    @if (!authorized)
+    {
+        <section class="ww-panel"><h2>Employer access required</h2><p>This page is available only to members with the Employer role. Employee accounts cannot review or change other people's leave requests.</p></section>
+    }
+    else
+    {
+        <section class="ww-panel"><div class="panel-heading"><div><div class="eyebrow">INBOX</div><h2>Leave awaiting review</h2></div><span class="panel-badge">@requests.Count(x => x.Status == "Pending") pending</span></div>
+        @if (requests.Count == 0) { <div class="empty-state"><div class="empty-symbol">✓</div><h3>Nothing to review</h3><p>New employee requests will appear here.</p></div> }
+        @foreach (var item in requests)
+        {
+            <div class="team-request">
+                <div class="team-request-top"><div class="user-avatar">@Initials(item.EmployeeProfile.User.Email)</div><div class="team-request-person"><strong>@(item.EmployeeProfile.User.Email ?? "Employee")</strong><small>@item.LeaveType leave · @item.CreatedAtUtc.ToLocalTime().ToString("dd MMM yyyy")</small></div><span class="request-status">@item.Status</span></div>
+                <div class="calc-line"><span>Dates requested</span><strong>@item.StartDate.ToString("dd MMM yyyy") – @item.EndDate.ToString("dd MMM yyyy")</strong></div>
+                <div class="calc-line"><span>Working days (preview)</span><strong>@(item.RequestedWorkingDays?.ToString("0.##") ?? "Not calculated")</strong></div>
+                @if (!string.IsNullOrWhiteSpace(item.EmployeeNote)) { <p class="employee-note">Employee note: @item.EmployeeNote</p> }
+                @if (item.Status == "Pending")
+                {
+                    <div class="review-actions"><input class="form-control ww-input" placeholder="Optional note to employee" @bind="reviewNotes[item.Id]" /><button class="ww-button ww-button-primary" @onclick="() => ReviewAsync(item, true)">Approve</button><button class="ww-button ww-button-outline" @onclick="() => ReviewAsync(item, false)">Decline</button></div>
+                }
+                else if (!string.IsNullOrWhiteSpace(item.ReviewerNote)) { <p class="employee-note">Review note: @item.ReviewerNote</p> }
+            </div>
+        }
+        </section>
+    }
+</div>
+@code {
+    private bool authorized;
+    private string? message;
+    private string userId = "";
+    private Guid organizationId;
+    private List<LeaveWise.Data.LeaveRequestRecord> requests = new();
+    private Dictionary<Guid, string> reviewNotes = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        userId = state.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        if (string.IsNullOrWhiteSpace(userId)) return;
+        var membership = await Db.OrganizationMemberships.AsNoTracking().FirstOrDefaultAsync(x => x.UserId == userId);
+        if (membership is null || membership.Role is not ("Employer" or "HR" or "Manager")) return;
+        authorized = true;
+        organizationId = membership.OrganizationId;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        requests = await Db.LeaveRequests
+            .Include(x => x.EmployeeProfile).ThenInclude(x => x.User)
+            .Where(x => x.EmployeeProfile.OrganizationId == organizationId)
+            .OrderByDescending(x => x.CreatedAtUtc).Take(100).ToListAsync();
+        foreach (var item in requests)
+            if (!reviewNotes.ContainsKey(item.Id)) reviewNotes[item.Id] = "";
+    }
+
+    private async Task ReviewAsync(LeaveWise.Data.LeaveRequestRecord item, bool approve)
+    {
+        var reviewerIsAuthorized = await Db.OrganizationMemberships.AsNoTracking().AnyAsync(x => x.UserId == userId && x.OrganizationId == organizationId && (x.Role == "Employer" || x.Role == "HR" || x.Role == "Manager"));
+        if (!reviewerIsAuthorized || item.EmployeeProfile.OrganizationId != organizationId || item.EmployeeProfile.UserId == userId) { message = "You do not have permission to review this request."; return; }
+        var stored = await Db.LeaveRequests.Include(x => x.EmployeeProfile)
+            .FirstOrDefaultAsync(x => x.Id == item.Id && x.EmployeeProfile.OrganizationId == organizationId);
+        if (stored is null || stored.Status != "Pending") { message = "This request has already been reviewed or no longer exists."; await LoadAsync(); return; }
+        stored.Status = approve ? "Approved" : "Declined";
+        stored.ReviewerNote = string.IsNullOrWhiteSpace(reviewNotes[item.Id]) ? null : reviewNotes[item.Id].Trim();
+        stored.ReviewedByUserId = userId;
+        stored.ReviewedAtUtc = DateTime.UtcNow;
+        Db.AuditEvents.Add(new LeaveWise.Data.AuditEvent
+        {
+            OrganizationId = organizationId, ActorUserId = userId,
+            Action = approve ? "LeaveRequestApproved" : "LeaveRequestDeclined",
+            EntityType = "LeaveRequest", EntityId = stored.Id.ToString(),
+            DetailsJson = System.Text.Json.JsonSerializer.Serialize(new { stored.Status, stored.ReviewerNote })
+        });
+        await Db.SaveChangesAsync();
+        message = approve ? "Request approved. Email notifications and balance deductions are not connected yet." : "Request declined. The decision is saved to the audit history.";
+        await LoadAsync();
+    }
+
+    private static string Initials(string? email) => string.IsNullOrWhiteSpace(email) ? "WW" : email[..1].ToUpperInvariant();
+}

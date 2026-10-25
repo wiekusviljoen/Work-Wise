@@ -1,0 +1,13 @@
+{
+  "name": "Work-Wise",
+  "short_name": "Work-Wise",
+  "description": "Employment leave and benefits, made clear.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f6f8f6",
+  "theme_color": "#244f3d",
+  "icons": [
+    { "src": "/work-wise-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

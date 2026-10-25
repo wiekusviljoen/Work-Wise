@@ -1,0 +1,30 @@
+@page "/benefits"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+<PageTitle>Pay & benefits | Work-Wise</PageTitle>
+<div class="ww-page">
+    <div class="page-title-row"><div><div class="eyebrow">IMPORTANT DATES, WITHOUT SURPRISES</div><h1>Pay & benefits<span class="accent-dot">.</span></h1><p>Keep salary assumptions and contract-dependent benefits visible.</p></div></div>
+    <div class="ww-notice"><span>ⓘ</span><p>No salary or bonus values have been extracted from a contract yet. The examples below explain what Work-Wise will support; they are not payroll calculations.</p></div>
+    <div class="ww-content-grid">
+        <section class="ww-panel"><div class="panel-heading"><div><div class="eyebrow">SALARY ESTIMATOR</div><h2>Estimate unpaid-leave impact</h2></div></div>
+            <div class="form-field"><label for="salary">Gross monthly salary (N$ or R)</label><input id="salary" type="number" min="0" step="0.01" class="form-control ww-input" @bind="monthlySalary" /></div>
+            <div class="form-field"><label for="deductionDays">Unpaid working days</label><input id="deductionDays" type="number" min="0" max="31" class="form-control ww-input" @bind="unpaidDays" /></div>
+            <div class="form-field"><label for="divisor">Monthly deduction divisor</label><select id="divisor" class="form-control ww-input" @bind="divisor"><option value="21.67">21.67 working days (illustrative)</option><option value="22">22 working days (illustrative)</option><option value="30">30 calendar days (illustrative)</option></select></div>
+            <div class="calc-result"><span class="calc-number">@CurrencySymbol@estimatedDeduction.ToString("N2")</span><span>estimated gross deduction</span></div>
+            <div class="ww-notice compact-notice"><span>!</span><p>Illustration only, using the selected divisor. This is not a legal determination or a net-pay forecast. Confirm the employer's payroll method.</p></div>
+        </section>
+        <section class="ww-panel"><div class="panel-heading"><div><div class="eyebrow">BONUS TRACKER</div><h2>13th-cheque reminder</h2></div></div>
+            <div class="bonus-illustration"><div class="bonus-icon">◇</div><div><span class="eyebrow">CONTRACT-DEPENDENT BENEFIT</span><h3>Never assume. Always verify.</h3><p>Work-Wise will read the bonus clause, highlight eligibility conditions and remind you of a confirmed date.</p></div></div>
+            <div class="checklist-row"><span>01</span><div><strong>Find the clause</strong><small>Check whether a 13th cheque or bonus is promised.</small></div></div>
+            <div class="checklist-row"><span>02</span><div><strong>Confirm conditions</strong><small>Qualifying period, performance conditions and pro-rating.</small></div></div>
+            <div class="checklist-row"><span>03</span><div><strong>Set the reminder</strong><small>Use a confirmed date, not an assumed December payment.</small></div></div>
+        </section>
+    </div>
+</div>
+@code {
+    private decimal monthlySalary = 0;
+    private int unpaidDays = 0;
+    private decimal divisor = 21.67m;
+    private decimal estimatedDeduction => divisor > 0 ? Math.Max(0, monthlySalary) / divisor * Math.Max(0, unpaidDays) : 0;
+    private string CurrencySymbol => "N$ / R ";
+}

@@ -1,0 +1,33 @@
+@page "/contracts"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@attribute [Authorize]
+<PageTitle>My contract | Work-Wise</PageTitle>
+<div class="ww-page">
+    <div class="page-title-row"><div><div class="eyebrow">YOUR TERMS, IN ONE PLACE</div><h1>My contract<span class="accent-dot">.</span></h1><p>Upload your employment contract and review the information before it is used.</p></div></div>
+    <div class="ww-content-grid">
+        <section class="ww-panel"><div class="panel-heading"><div><div class="eyebrow">CONTRACT SCANNER</div><h2>Add a contract</h2></div><span class="panel-badge">Preview</span></div>
+            <div class="upload-drop"><div class="upload-symbol">↑</div><h3>Choose your contract file</h3><p>PDF or clear images. Keep every page visible and readable.</p><InputFile OnChange="OnFileSelected" accept=".pdf,.png,.jpg,.jpeg" class="form-control ww-input" />
+                @if (!string.IsNullOrWhiteSpace(fileName)) { <div class="file-selected">Selected: @fileName (@fileSize)</div> }
+            </div>
+            <div class="ww-notice"><span>🔒</span><p>File selection currently stays in this browser component. It is not uploaded, stored or sent to an AI service. Do not use real sensitive contracts until secure document storage is implemented.</p></div>
+        </section>
+        <section class="ww-panel"><div class="panel-heading"><div><div class="eyebrow">REVIEW CHECKLIST</div><h2>What we'll extract</h2></div></div>
+            <div class="checklist-row"><span>01</span><div><strong>Employment details</strong><small>Country, start date and employment type</small></div></div>
+            <div class="checklist-row"><span>02</span><div><strong>Leave entitlements</strong><small>Annual, sick, family and special leave clauses</small></div></div>
+            <div class="checklist-row"><span>03</span><div><strong>Salary & pay frequency</strong><small>Monthly or weekly basis and stated remuneration</small></div></div>
+            <div class="checklist-row"><span>04</span><div><strong>Bonus conditions</strong><small>13th-cheque clause, eligibility and payment timing</small></div></div>
+            <div class="ww-notice compact-notice"><span>ⓘ</span><p>Extracted values will need your confirmation. Work-Wise will not infer missing entitlements or treat an uncertain clause as fact.</p></div>
+        </section>
+    </div>
+</div>
+@code {
+    private string? fileName;
+    private string? fileSize;
+    private void OnFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        fileName = file.Name;
+        fileSize = file.Size >= 1024 * 1024 ? $"{file.Size / 1024d / 1024d:F2} MB" : $"{file.Size / 1024d:F0} KB";
+    }
+}

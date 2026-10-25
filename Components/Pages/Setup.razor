@@ -1,0 +1,99 @@
+@page "/setup"
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@attribute [Authorize]
+@inject AuthenticationStateProvider AuthStateProvider
+@inject LeaveWise.Data.ApplicationDbContext Db
+@inject NavigationManager Navigation
+<PageTitle>Set up your workspace | Work-Wise</PageTitle>
+<div class="ww-page">
+    <div class="page-title-row"><div><div class="eyebrow">LET'S GET YOU SET UP</div><h1>Your workspace<span class="accent-dot">.</span></h1><p>Tell Work-Wise how you fit into your workplace. You can review these details later.</p></div></div>
+    @if (!string.IsNullOrWhiteSpace(errorMessage)) { <div class="ww-notice"><span>!</span><p>@errorMessage</p></div> }
+    <div class="ww-content-grid">
+        <section class="ww-panel"><div class="panel-heading"><div><div class="eyebrow">YOUR PROFILE</div><h2>Employment basics</h2></div></div>
+            <EditForm Model="model" OnValidSubmit="SaveAsync">
+                <div class="form-field"><label for="role">I am setting up as</label><InputSelect id="role" class="form-control ww-input" @bind-Value="model.Role"><option value="Employee">Employee</option><option value="Employer">Employer / business owner</option></InputSelect></div>
+                <div class="form-field"><label for="org">Company or workspace name</label><InputText id="org" class="form-control ww-input" @bind-Value="model.OrganizationName" placeholder="e.g. My workplace" /></div>
+                <div class="form-field"><label for="country">Country of employment</label><InputSelect id="country" class="form-control ww-input" @bind-Value="model.CountryCode"><option value="NA">Namibia</option><option value="ZA">South Africa</option></InputSelect></div>
+                <div class="form-two"><div class="form-field"><label for="startDate">Employment start date</label><InputDate id="startDate" class="form-control ww-input" @bind-Value="model.StartDate" /></div><div class="form-field"><label for="week">Working days per week</label><InputSelect id="week" class="form-control ww-input" @bind-Value="model.Workdays"><option value="5">5 days</option><option value="6">6 days</option><option value="7">7 days</option></InputSelect></div></div>
+                <div class="form-field"><label for="salary">Gross monthly salary (optional)</label><InputNumber id="salary" class="form-control ww-input" @bind-Value="model.MonthlySalary" min="0" step="0.01" /></div>
+                <button class="ww-button ww-button-primary" type="submit">Save workspace →</button>
+            </EditForm>
+        </section>
+        <section class="ww-panel"><div class="panel-heading"><div><div class="eyebrow">WHY WE ASK</div><h2>Start with the facts</h2></div></div>
+            <div class="checklist-row"><span>01</span><div><strong>Your country matters</strong><small>Namibia and South Africa have different employment rules.</small></div></div>
+            <div class="checklist-row"><span>02</span><div><strong>Your schedule matters</strong><small>Working days affect date calculations. Public holidays and sector rules are not applied yet.</small></div></div>
+            <div class="checklist-row"><span>03</span><div><strong>Salary is optional</strong><small>It will be used for estimates only after the relevant payroll assumptions are confirmed.</small></div></div>
+            <div class="ww-notice compact-notice"><span>🔒</span><p>Do not add real salary or contract information to a production environment until the deployment's privacy and security setup has been reviewed.</p></div>
+        </section>
+    </div>
+</div>
+@code {
+    private SetupInput model = new();
+    private string? errorMessage;
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userId = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId is null) { Navigation.NavigateTo("/Account/Login"); return; }
+        var exists = await Db.EmployeeProfiles.AnyAsync(x => x.UserId == userId);
+        if (exists) Navigation.NavigateTo("/");
+    }
+    private async Task SaveAsync()
+    {
+        errorMessage = null;
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userId = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId is null) { errorMessage = "Your session expired. Please sign in again."; return; }
+        if (string.IsNullOrWhiteSpace(model.OrganizationName)) { errorMessage = "Please enter a company or workspace name."; return; }
+        if (model.MonthlySalary is < 0) { errorMessage = "Salary cannot be negative."; return; }
+        if (model.Workdays is < 1 or > 7) { errorMessage = "Choose a working week between 1 and 7 days."; return; }
+
+        var existing = await Db.EmployeeProfiles.AnyAsync(x => x.UserId == userId);
+        if (existing) { Navigation.NavigateTo("/"); return; }
+        var organization = new LeaveWise.Data.Organization
+        {
+            Name = model.OrganizationName.Trim(),
+            CountryCode = model.CountryCode
+        };
+        Db.Organizations.Add(organization);
+        Db.OrganizationMemberships.Add(new LeaveWise.Data.OrganizationMembership
+        {
+            Organization = organization,
+            UserId = userId,
+            Role = model.Role
+        });
+        Db.EmployeeProfiles.Add(new LeaveWise.Data.EmployeeProfile
+        {
+            Organization = organization,
+            UserId = userId,
+            CountryCode = model.CountryCode,
+            CurrencyCode = model.CountryCode == "ZA" ? "ZAR" : "NAD",
+            EmploymentStartDate = DateOnly.FromDateTime(model.StartDate),
+            OrdinaryDaysPerWeek = model.Workdays,
+            GrossMonthlySalary = model.MonthlySalary
+        });
+        Db.AuditEvents.Add(new LeaveWise.Data.AuditEvent
+        {
+            OrganizationId = organization.Id,
+            ActorUserId = userId,
+            Action = "WorkspaceCreated",
+            EntityType = "Organization",
+            EntityId = organization.Id.ToString(),
+            DetailsJson = System.Text.Json.JsonSerializer.Serialize(new { model.Role, model.CountryCode })
+        });
+        await Db.SaveChangesAsync();
+        Navigation.NavigateTo("/");
+    }
+    private sealed class SetupInput
+    {
+        public string Role { get; set; } = "Employee";
+        public string OrganizationName { get; set; } = "";
+        public string CountryCode { get; set; } = "NA";
+        public DateTime StartDate { get; set; } = DateTime.Today;
+        public int Workdays { get; set; } = 5;
+        public decimal? MonthlySalary { get; set; }
+    }
+}

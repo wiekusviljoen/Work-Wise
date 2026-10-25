@@ -1,0 +1,71 @@
+@page "/"
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@attribute [Authorize]
+@inject AuthenticationStateProvider AuthStateProvider
+@inject LeaveWise.Data.ApplicationDbContext Db
+<PageTitle>Work-Wise | Overview</PageTitle>
+<div class="ww-page">
+    @if (!profileReady)
+    {
+        <section class="ww-welcome"><div><div class="eyebrow">YOUR WORK, MADE CLEARER</div><h1>Welcome to Work-Wise<span class="accent-dot">.</span></h1><p>Let's set up your employment details so we can start building your leave record.</p></div><a class="ww-button ww-button-light" href="/setup">Set up workspace →</a></section>
+        <section class="ww-content-grid setup-welcome-grid">
+            <article class="ww-panel"><div class="panel-heading"><div><div class="eyebrow">FIRST THINGS FIRST</div><h2>Set up your workspace</h2></div></div><a class="ww-action-row" href="/setup"><span class="action-symbol">01</span><span class="action-copy"><strong>Confirm your country and work schedule</strong><small>Choose Namibia or South Africa and your ordinary working days.</small></span><span class="action-arrow">→</span></a><a class="ww-action-row" href="/contracts"><span class="action-symbol">02</span><span class="action-copy"><strong>Review your employment contract</strong><small>Contract scanning is being built. File upload is not enabled yet.</small></span><span class="action-arrow">→</span></a></article>
+            <article class="ww-panel"><div class="eyebrow">A NOTE ABOUT ACCURACY</div><h2>No made-up balances.</h2><p>Work-Wise will show a balance only when it has recorded transactions or a verified leave policy. This early version does not yet calculate official statutory entitlements.</p><div class="ww-notice"><span>ⓘ</span><p>Your workspace is private to your signed-in account. Company invitations and team sharing are not available yet.</p></div></article>
+        </section>
+    }
+    else
+    {
+        <section class="ww-welcome"><div><div class="eyebrow">YOUR WORK, MADE CLEARER</div><h1>Welcome back<span class="accent-dot">.</span></h1><p>@organizationName · @(countryCode == "ZA" ? "South Africa" : "Namibia") workspace</p></div><a class="ww-button ww-button-light" href="/leave">+ Request leave</a></section>
+        <section class="ww-stat-grid" aria-label="Leave overview">
+            <article class="ww-stat-card"><div class="stat-top"><span>Annual leave</span><span class="stat-icon">☀</span></div><div class="stat-value">@annualBalance <small>days</small></div><div class="stat-foot">@(annualBalance == "Not set" ? "No verified transactions recorded" : "Calculated from recorded transactions")</div></article>
+            <article class="ww-stat-card"><div class="stat-top"><span>Sick leave</span><span class="stat-icon">♡</span></div><div class="stat-value">@sickBalance <small>days</small></div><div class="stat-foot">@(sickBalance == "Not set" ? "No verified transactions recorded" : "Calculated from recorded transactions")</div></article>
+            <article class="ww-stat-card"><div class="stat-top"><span>Pending requests</span><span class="stat-icon">◷</span></div><div class="stat-value">@pendingRequests <small>requests</small></div><div class="stat-foot">Requests awaiting review or action</div><a href="/leave">View leave requests →</a></article>
+            <article class="ww-stat-card"><div class="stat-top"><span>Next benefit date</span><span class="stat-icon">✳</span></div><div class="stat-value">@(nextBenefitDate?.ToString("dd MMM") ?? "Not set")</div><div class="stat-foot">Only confirmed reminders are shown</div><a href="/benefits">View benefits →</a></article>
+        </section>
+        <section class="ww-content-grid">
+            <article class="ww-panel"><div class="panel-heading"><div><div class="eyebrow">YOUR WORKSPACE</div><h2>Keep your record up to date</h2></div></div>
+                <a class="ww-action-row" href="/leave"><span class="action-symbol">01</span><span class="action-copy"><strong>Request time off</strong><small>Create a leave request draft and preview working days.</small></span><span class="action-arrow">→</span></a>
+                <a class="ww-action-row" href="/contracts"><span class="action-symbol">02</span><span class="action-copy"><strong>Review your contract</strong><small>Contract upload and secure extraction are not enabled yet.</small></span><span class="action-arrow">→</span></a>
+                <a class="ww-action-row" href="/benefits"><span class="action-symbol">03</span><span class="action-copy"><strong>Track pay and benefits</strong><small>View estimates and contract-dependent bonus conditions.</small></span><span class="action-arrow">→</span></a>
+            </article>
+            <article class="ww-panel"><div class="eyebrow">EMPLOYMENT PROFILE</div><h2>@organizationName</h2><div class="calc-line"><span>Country</span><strong>@(countryCode == "ZA" ? "South Africa" : "Namibia")</strong></div><div class="calc-line"><span>Employment start</span><strong>@startDate.ToString("dd MMM yyyy")</strong></div><div class="calc-line"><span>Working days per week</span><strong>@workdays</strong></div><div class="calc-line"><span>Monthly salary</span><strong>@(salary.HasValue ? $"{(countryCode == "ZA" ? "R" : "N$")} {salary.Value:N2}" : "Not provided")</strong></div><a class="ww-button ww-button-primary" href="/setup" style="margin-top:16px">Review profile</a></article>
+        </section>
+    }
+    <footer class="ww-footer">WORK-WISE <span>Employment, without the guesswork.</span></footer>
+</div>
+@code {
+    private bool profileReady;
+    private string organizationName = "";
+    private string countryCode = "NA";
+    private string annualBalance = "Not set";
+    private string sickBalance = "Not set";
+    private int pendingRequests;
+    private DateOnly? nextBenefitDate;
+    private DateTime startDate = DateTime.Today;
+    private int workdays = 5;
+    private decimal? salary;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userId = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId is null) return;
+        var profile = await Db.EmployeeProfiles.AsNoTracking().FirstOrDefaultAsync(x => x.UserId == userId);
+        if (profile is null) return;
+        profileReady = true;
+        organizationName = await Db.Organizations.Where(x => x.Id == profile.OrganizationId).Select(x => x.Name).FirstOrDefaultAsync() ?? "My workspace";
+        countryCode = profile.CountryCode;
+        startDate = profile.EmploymentStartDate.ToDateTime(TimeOnly.MinValue);
+        workdays = profile.OrdinaryDaysPerWeek;
+        salary = profile.GrossMonthlySalary;
+        var annual = await Db.LeaveTransactions.Where(x => x.EmployeeProfileId == profile.Id && x.LeaveType == "Annual").SumAsync(x => (decimal?)x.QuantityDays);
+        var sick = await Db.LeaveTransactions.Where(x => x.EmployeeProfileId == profile.Id && x.LeaveType == "Sick").SumAsync(x => (decimal?)x.QuantityDays);
+        if (annual.HasValue) annualBalance = annual.Value.ToString("0.##");
+        if (sick.HasValue) sickBalance = sick.Value.ToString("0.##");
+        pendingRequests = await Db.LeaveRequests.CountAsync(x => x.EmployeeProfileId == profile.Id && x.Status == "Pending");
+        nextBenefitDate = await Db.BenefitReminders.Where(x => x.EmployeeProfileId == profile.Id && x.ExpectedPaymentDate >= DateOnly.FromDateTime(DateTime.Today)).OrderBy(x => x.ExpectedPaymentDate).Select(x => x.ExpectedPaymentDate).FirstOrDefaultAsync();
+    }
+}

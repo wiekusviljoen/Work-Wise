@@ -1,0 +1,43 @@
+@implements IDisposable
+@inject NavigationManager NavigationManager
+<div class="ww-brand">
+    <a href="/" class="brand-mark" aria-label="Work-Wise home"><span>W</span></a>
+    <a href="/" class="brand-word">work<span>-</span>wise<small>EMPLOYMENT, MADE CLEAR</small></a>
+</div>
+<div class="nav-section-label">WORKSPACE</div>
+<nav class="ww-nav">
+    <NavLink href="/" Match="NavLinkMatch.All" class="ww-nav-link"><span class="nav-icon">▦</span>Overview</NavLink>
+    <NavLink href="/leave" class="ww-nav-link"><span class="nav-icon">◷</span>Leave & requests</NavLink>
+    <NavLink href="/contracts" class="ww-nav-link"><span class="nav-icon">▤</span>My contract</NavLink>
+    <NavLink href="/benefits" class="ww-nav-link"><span class="nav-icon">◇</span>Pay & benefits</NavLink>
+</nav>
+<div class="nav-section-label nav-spaced">ACCOUNT</div>
+<nav class="ww-nav"><NavLink href="/Account/Manage" class="ww-nav-link"><span class="nav-icon">○</span>Profile & security</NavLink></nav>
+<div class="ww-sidebar-bottom">
+    <div class="sidebar-help"><span class="help-mark">?</span><div><strong>Need a hand?</strong><small>Help centre coming soon</small></div></div>
+    <AuthorizeView>
+        <Authorized>
+            <div class="ww-user"><div class="user-avatar">@Initials(context.User.Identity?.Name)</div><div class="user-copy"><strong>@context.User.Identity?.Name</strong><small>Signed in</small></div>
+                <form action="Account/Logout" method="post"><AntiforgeryToken /><input type="hidden" name="ReturnUrl" value="@currentUrl" /><button class="logout-button" type="submit" title="Sign out">↗</button></form>
+            </div>
+        </Authorized>
+        <NotAuthorized><a class="ww-button ww-button-primary full-button" href="/Account/Login">Sign in</a><a class="ww-register" href="/Account/Register">Create an account</a></NotAuthorized>
+    </AuthorizeView>
+</div>
+@code {
+    private string? currentUrl;
+    private static string Initials(string? name) {
+        if (string.IsNullOrWhiteSpace(name)) return "WW";
+        var parts = name.Split(new[] { '@', '.', ' ', '_' }, StringSplitOptions.RemoveEmptyEntries);
+        return string.Concat(parts.Take(2).Select(p => char.ToUpperInvariant(p[0])));
+    }
+    protected override void OnInitialized() {
+        currentUrl = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
+        NavigationManager.LocationChanged += OnLocationChanged;
+    }
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) {
+        currentUrl = NavigationManager.ToBaseRelativePath(e.Location);
+        StateHasChanged();
+    }
+    public void Dispose() => NavigationManager.LocationChanged -= OnLocationChanged;
+}
