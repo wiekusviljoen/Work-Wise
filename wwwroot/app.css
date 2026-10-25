@@ -141,3 +141,14 @@ html,body{background:#f3f6fa;color:#14283e}
 .ww-tool-icon svg,.ww-float-icon svg,.ww-bottom-symbol svg{width:58%;height:58%;display:block;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .ww-float-icon svg{width:62%;height:62%}
 .ww-bottom-symbol svg{width:60%;height:60%}
+
+/* Keep sign out accessible outside the collapsed mobile navigation. */
+.topbar-logout{margin:0;flex-shrink:0}
+.topbar-logout button{min-height:44px;padding:10px 16px;border:1px solid var(--green);border-radius:9px;background:var(--green);color:#fff;font-weight:700;white-space:nowrap;cursor:pointer}
+.topbar-logout button:hover{background:var(--green-dark)}
+.topbar-logout button:focus-visible{outline:3px solid #56c99a;outline-offset:3px}
+@media(max-width:760px){
+  .app-topbar{display:flex;height:auto;min-height:60px;padding:8px 14px;justify-content:flex-end}
+  .app-topbar .topbar-context,.app-topbar .country-chip{display:none}
+  .topbar-right{gap:12px}
+}
