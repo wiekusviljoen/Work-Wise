@@ -76,7 +76,7 @@
     </div>
     <div class="col-lg-4 col-lg-offset-2">
         <section>
-            <h3>Use another service to log in.</h3>
+
             <hr />
             <ExternalLoginPicker />
         </section>
@@ -137,9 +137,9 @@
                 return;
             }
 
-            // This doesn't count login failures towards account lockout
-            // To enable password failures to trigger account lockout, set lockoutOnFailure: true
-            result = await SignInManager.PasswordSignInAsync(Input.Email, Input.Password, Input.RememberMe, lockoutOnFailure: false);
+            // Count repeated failed passwords towards the configured lockout.
+
+            result = await SignInManager.PasswordSignInAsync(Input.Email, Input.Password, Input.RememberMe, lockoutOnFailure: true);
         }
 
         if (result.Succeeded)

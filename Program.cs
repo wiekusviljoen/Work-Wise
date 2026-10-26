@@ -94,7 +94,10 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
     .AddSignInManager()
     .AddDefaultTokenProviders();
 
-builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
+if (IdentitySmtpEmailSender.IsConfigured(builder.Configuration))
+    builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentitySmtpEmailSender>();
+else
+    builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
 builder.Services.AddScoped<LeaveWise.Domain.LeaveNotificationService>();
 
 var app = builder.Build();

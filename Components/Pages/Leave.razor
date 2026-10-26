@@ -59,7 +59,7 @@
         <div class="content-two-col">
             <section class="panel">
                 <div class="panel-heading"><div><p class="eyebrow">QUICK ACTION</p><h2>Request time off</h2></div><span class="panel-icon">INFO</span></div>
-                <EditForm Model="request" OnValidSubmit="SubmitRequest">
+                <EditForm Model="request" OnValidSubmit="SubmitRequest" FormName="SubmitLeave">
                     <DataAnnotationsValidator />
                     <ValidationSummary class="text-danger" />
                     <div class="form-field">
@@ -100,7 +100,8 @@
                                         <small>@item.EmployeeNote</small>
                                     }
                                 </div>
-                                <span class="status-label @(item.Status == "Approved" ? "status-approved" : item.Status == "Rejected" ? "status-rejected" : "status-pending")">@item.Status</span>
+                                <span class="status-label @(item.Status == "Approved" ? "status-approved" : item.Status == "Rejected" ? "status-rejected" : "status-pending")">@(item.Status == "Rejected" ? "Declined" : item.Status)</span>
+@if (item.Status == "Pending") { <button type="button" class="button-secondary" disabled="@isSaving" @onclick="() => CancelRequest(item.Id)">Cancel request</button> }
                             </div>
                         }
                     </div>
@@ -215,104 +216,47 @@
     private async Task SubmitRequest()
     {
         if (isSaving || string.IsNullOrWhiteSpace(userId)) return;
-        feedback = null;
-        if (request.EndDate < request.StartDate)
-        {
-            feedback = "The end date must be on or after the start date.";
-            feedbackDetail = "Please correct the dates and try again.";
-            return;
-        }
-        if (request.StartDate < DateOnly.FromDateTime(DateTime.Today))
-        {
-            feedback = "Choose today or a future date.";
-            feedbackDetail = "Past-dated requests are not accepted in this early-access flow.";
-            return;
-        }
-        if (request.EndDate.DayNumber - request.StartDate.DayNumber > 365)
-        {
-            feedback = "The selected date range is too long.";
-            feedbackDetail = "A request can cover at most 366 calendar days. Split longer periods into separate requests.";
-            return;
-        }
-        if (!new[] { "Annual leave", "Sick leave", "Family responsibility leave", "Compassionate leave", "Maternity leave", "Parental leave", "Unpaid leave", "Other" }.Contains(request.LeaveType, StringComparer.Ordinal))
-        {
-            feedback = "Choose a valid leave type.";
-            feedbackDetail = "No request was saved.";
-            return;
-        }
-
         isSaving = true;
         try
         {
             await using var db = await DbFactory.CreateDbContextAsync();
-            var employment = await db.EmploymentRecords
-                .Include(x => x.Organization)
-                .SingleOrDefaultAsync(x => x.Id == request.EmploymentRecordId && x.EmployeeUserId == userId && x.Status == "Active");
-            if (employment is null)
+            var result = await LeaveRequestService.SubmitAsync(db, userId, request.EmploymentRecordId, request.LeaveType,
+                request.StartDate, request.EndDate, request.Note, DateOnly.FromDateTime(DateTime.Today));
+            feedback = result.Message;
+            feedbackDetail = "";
+            if (result.Request is { } saved)
             {
-                feedback = "Your employment record could not be verified.";
-                feedbackDetail = "Refresh the page and select an active record linked to your account.";
-                return;
+                var notified = false;
+                try { notified = await LeaveNotifications.NotifyOwnersAsync(db, saved, saved.EmploymentRecord.EmployeeName, saved.EmploymentRecord.Organization.Name); }
+                catch (Exception ex) { Logger.LogError(ex, "Notification failed for saved request {RequestId}", saved.Id); }
+                feedbackDetail = $"{saved.ScheduledWorkdays} scheduled workday(s). " + (notified ? "Employer notified by email." : "Employer can review this under Leave approvals; email was not delivered.");
+                request = new LeaveRequestInput { EmploymentRecordId = saved.EmploymentRecordId };
+                await LoadData();
             }
-
-            var scheduledDays = new HashSet<DayOfWeek>();
-            for (var day = 0; day < 7; day++)
-                if ((employment.ScheduledWorkdaysMask & (1 << day)) != 0)
-                    scheduledDays.Add((DayOfWeek)(((day + 1) % 7)));
-            if (scheduledDays.Count == 0)
-            {
-                feedback = "Your work schedule needs review.";
-                feedbackDetail = "Ask your employer to configure scheduled workdays before submitting leave.";
-                return;
-            }
-
-            var workdays = LeaveWise.Domain.LeaveCalculator.CountScheduledWorkdays(request.StartDate, request.EndDate, scheduledDays);
-            if (workdays == 0)
-            {
-                feedback = "The selected dates contain no scheduled workdays.";
-                feedbackDetail = "Choose dates that include at least one scheduled workday.";
-                return;
-            }
-
-            var record = new LeaveWise.Data.LeaveRequestRecord
-            {
-                EmploymentRecordId = employment.Id,
-                LeaveType = request.LeaveType,
-                StartDate = request.StartDate,
-                EndDate = request.EndDate,
-                ScheduledWorkdays = workdays,
-                EmployeeNote = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim(),
-                Status = "Pending",
-                RequestedByUserId = userId
-            };
-            db.LeaveRequests.Add(record);
-            await db.AuditEvents.AddAsync(new LeaveWise.Data.AuditEvent
-            {
-                OrganizationId = employment.OrganizationId,
-                ActorUserId = userId,
-                Action = "LeaveRequestSubmitted",
-                EntityType = "LeaveRequest",
-                EntityId = record.Id.ToString(),
-                DetailsJson = System.Text.Json.JsonSerializer.Serialize(new { record.LeaveType, record.StartDate, record.EndDate, ScheduledWorkdays = workdays })
-            });
-            await db.SaveChangesAsync();
-            var employerNotified = await LeaveNotifications.NotifyOwnersAsync(db, record, employment.EmployeeName, employment.Organization.Name);
-            requests.Insert(0, new RequestView(record.Id, record.LeaveType, record.StartDate, record.EndDate, record.EmployeeNote, record.Status, employment.Organization.Name));
-            feedback = "Leave request saved.";
-            feedbackDetail = $"It is pending employer review. {workdays} scheduled workday(s) were counted. " + (employerNotified ? "An email was sent to the employer's verified account address." : "Email notification was not delivered; the employer can still review it under Leave approvals.") + " Public holidays must be checked by the approver.";
-            request = new LeaveRequestInput { EmploymentRecordId = employment.Id, StartDate = DateOnly.FromDateTime(DateTime.Today.AddDays(7)), EndDate = DateOnly.FromDateTime(DateTime.Today.AddDays(7)) };
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException ex)
         {
-            feedback = "The request could not be saved.";
-            feedbackDetail = "Please try again. No leave balance was changed.";
+            Logger.LogError(ex, "Could not save leave request");
+            feedback = "The request could not be confirmed. Refresh your history before trying again.";
         }
-        finally
-        {
-            isSaving = false;
-        }
+        finally { isSaving = false; }
     }
 
+    private async Task CancelRequest(Guid id)
+    {
+        if (isSaving || string.IsNullOrWhiteSpace(userId)) return;
+        isSaving = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var result = await LeaveRequestService.CancelAsync(db, userId, id);
+            feedback = result.Message;
+            feedbackDetail = "";
+            await LoadData();
+        }
+        catch (DbUpdateException) { feedback = "The request changed. Refresh before trying again."; }
+        finally { isSaving = false; }
+    }
     private sealed class InviteInput
     {
         [Required, StringLength(64, MinimumLength = 20)] public string Code { get; set; } = "";

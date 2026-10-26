@@ -21,6 +21,7 @@ public static class LeaveLedgerService
         if (string.IsNullOrWhiteSpace(actorUserId))
             throw new ArgumentException("An authenticated actor is required.", nameof(actorUserId));
 
+        if (employment.EmploymentEndDate is { } end && throughDate > end) throughDate = end;
         var policies = await db.OrganizationLeavePolicies
             .Where(p => p.OrganizationId == employment.OrganizationId
                 && (p.Status == "Active" || p.Status == "Superseded")
@@ -107,6 +108,12 @@ public static class LeaveLedgerService
         return added;
     }
 
+    // Reserve every approved usage entry, including leave scheduled beyond the current date.
+    public static async Task<decimal> GetAvailableBalanceAsync(ApplicationDbContext db, Guid employmentRecordId, string leaveType, DateOnly today)
+    {
+        var entries = await db.LeaveLedger.Where(x => x.EmploymentRecordId == employmentRecordId && x.LeaveType == leaveType && (x.EffectiveDate <= today || x.EntryType == "Usage")).Select(x => x.DayDelta).ToListAsync();
+        return entries.Sum();
+    }
     public static async Task<decimal> GetBalanceAsync(
         ApplicationDbContext db,
         Guid employmentRecordId,
@@ -114,10 +121,11 @@ public static class LeaveLedgerService
         DateOnly asOfDate,
         CancellationToken cancellationToken = default)
     {
-        return await db.LeaveLedger
+        var entries = await db.LeaveLedger
             .Where(x => x.EmploymentRecordId == employmentRecordId
                 && x.LeaveType == leaveType
                 && x.EffectiveDate <= asOfDate)
-            .SumAsync(x => (decimal?)x.DayDelta, cancellationToken) ?? 0m;
+            .Select(x => x.DayDelta).ToListAsync(cancellationToken);
+        return entries.Sum();
     }
 }

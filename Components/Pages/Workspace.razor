@@ -102,14 +102,15 @@
         }
 
         <section class="panel" style="margin-top:24px">
-            <div class="panel-heading"><div><p class="eyebrow">EMPLOYEE RECORDS</p><h2>Employment records</h2></div><span class="count-chip">@employmentRecords.Count</span></div>
-            @if (employmentRecords.Count == 0)
+            <div class="panel-heading"><div><p class="eyebrow">EMPLOYEE RECORDS</p><h2>Employment records</h2></div><span class="count-chip">@employmentRecords.Count(x => x.Status == "Active") active</span></div>
+            <label class="policy-attestation"><input type="checkbox" @bind="showArchivedEmployees" /> Show archived employee records</label>
+            @if (!employmentRecords.Any(x => showArchivedEmployees || x.Status == "Active"))
             {
                 <div class="empty-state"><strong>No employee records to display</strong><p>@(ownedOrganizations.Count == 0 ? "Employment records are visible only to workspace owners. Your linked record is available in Leave & absences." : "Create an employee record in one of your owned workspaces to begin.")</p></div>
             }
             else
             {
-                @foreach (var employee in employmentRecords)
+                @foreach (var employee in employmentRecords.Where(x => showArchivedEmployees || x.Status == "Active"))
                 {
                     <div class="workspace-item">
                         <div class="workspace-symbol">ORG</div>
@@ -144,7 +145,7 @@
         @if (editingId is not null)
         {
             <section class="panel" aria-label="Edit employee">
-                <h2>Edit employee</h2>
+                <h2 tabindex="-1" @ref="employeeEditorHeading">Edit employee</h2><p role="status">@message</p>
                 <EditForm Model="editInput" OnValidSubmit="SaveEmployee" FormName="EditEmployee" @key="editingId">
                     <DataAnnotationsValidator /><ValidationSummary />
                     <div class="form-field"><label for="edit-name">Employee full name</label><InputText id="edit-name" class="form-control" @bind-Value="editInput.EmployeeName" /></div>
@@ -161,7 +162,7 @@
         @if (removingEmployee is not null)
         {
             <section class="panel" aria-label="Confirm employee removal">
-                <h2>Remove @removingEmployee.EmployeeName?</h2>
+                <h2 tabindex="-1" @ref="employeeEditorHeading">Remove @removingEmployee.EmployeeName?</h2><p role="status">@message</p>
                 <p>This archives the employee and prevents new leave requests and invitations. Existing leave records remain available for review.</p>
                 <button type="button" class="button-primary" disabled="@isManagingEmployee" @onclick="RemoveEmployee">Confirm removal</button>
                 <button type="button" class="button-primary" disabled="@isManagingEmployee" @onclick="CancelManagement">Cancel</button>
@@ -387,6 +388,13 @@
         finally { isSavingEmployee = false; }
     }
 
+    private ElementReference employeeEditorHeading;
+    private bool focusEmployeeEditor;
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (focusEmployeeEditor) { focusEmployeeEditor = false; await employeeEditorHeading.FocusAsync(); }
+    }
+    private bool showArchivedEmployees;
     private Guid? editingId;
     private bool editingLinked;
     private bool isManagingEmployee;
@@ -395,12 +403,12 @@
     private void CancelManagement() { editingId = null; removingEmployee = null; }
     private void BeginEdit(EmploymentView employee)
     {
-        removingEmployee = null;
+        removingEmployee = null; focusEmployeeEditor = true; message = null;
         editingId = employee.Id;
         editingLinked = employee.IsLinked;
         editInput = new() { EmployeeName = employee.EmployeeName, EmployeeEmail = employee.EmployeeEmail, EmploymentStartDate = employee.EmploymentStartDate, WeeklyHours = employee.WeeklyHours };
     }
-    private void BeginRemove(EmploymentView employee) { editingId = null; removingEmployee = employee; }
+    private void BeginRemove(EmploymentView employee) { editingId = null; removingEmployee = employee; focusEmployeeEditor = true; message = null; }
     private Task SaveEmployee() => ManageEmployee(editingId, editInput);
     private Task RemoveEmployee() => ManageEmployee(removingEmployee?.Id, null);
     private async Task ManageEmployee(Guid? id, EmployeeEditInput? changes)

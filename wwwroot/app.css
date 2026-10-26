@@ -154,3 +154,7 @@ html,body{background:#f3f6fa;color:#14283e}
 
 .employee-actions{display:flex;flex-wrap:wrap;gap:8px}
 @media(max-width:760px){.workspace-item:has(.employee-actions){flex-wrap:wrap}.employee-actions{width:100%}}
+
+/* Keep account actions reachable on short desktop screens. */
+@media(min-width:761px){.sidebar{overflow-y:auto}.sidebar-bottom{padding-top:16px}}
+@media(max-width:760px){.request-item{flex-wrap:wrap}.request-item .button-secondary{margin-left:auto}}

@@ -112,139 +112,23 @@
     private async Task ReviewRequest(Guid requestId, bool approve)
     {
         if (isReviewing || string.IsNullOrWhiteSpace(userId)) return;
-        if (approve && (!approvalConfirmations.TryGetValue(requestId, out var daysConfirmed) || !daysConfirmed))
-        {
-            feedback = "Confirm the workday count before approval.";
-            feedbackDetail = "Check the employee's schedule and applicable public holidays, adjust the leave-day count if needed, then confirm the review.";
-            return;
-        }
         isReviewing = true;
-        feedback = null;
         try
         {
             await using var db = await DbFactory.CreateDbContextAsync();
-            var item = await db.LeaveRequests.Include(x => x.EmploymentRecord)
-                .SingleOrDefaultAsync(x => x.Id == requestId && x.Status == "Pending");
-            if (item is null)
-            {
-                feedback = "This request is no longer pending.";
-                feedbackDetail = "Refresh the page to see the latest status.";
-                return;
-            }
-            var owner = await db.OrganizationMemberships.AnyAsync(x =>
-                x.OrganizationId == item.EmploymentRecord.OrganizationId && x.UserId == userId && x.IsActive && x.Role == "Owner");
-            if (!owner)
-            {
-                feedback = "You are not authorized to review this request.";
-                feedbackDetail = "Only an active owner of the request's organization can decide it.";
-                return;
-            }
-            if (item.RequestedByUserId == userId)
-            {
-                feedback = "You cannot approve or decline your own leave request.";
-                feedbackDetail = "Ask another authorized organization owner to review it.";
-                return;
-            }
-
-            await using var transaction = await db.Database.BeginTransactionAsync();
-            if (approve)
-            {
-                var overlaps = await db.LeaveRequests.AnyAsync(x =>
-                    x.EmploymentRecordId == item.EmploymentRecordId
-                    && x.Id != item.Id
-                    && x.Status == "Approved"
-                    && x.StartDate <= item.EndDate
-                    && x.EndDate >= item.StartDate);
-                if (overlaps)
-                {
-                    feedback = "This request overlaps approved leave.";
-                    feedbackDetail = "Review the employee's existing approved requests and resolve the date conflict before approving this one.";
-                    return;
-                }
-            }
-
-            var requestedDays = item.ScheduledWorkdays ?? 0m;
-            if (approve)
-            {
-                requestedDays = approvalDayCounts.TryGetValue(item.Id, out var adjustedDays) ? adjustedDays : requestedDays;
-                var maximumCalendarDays = item.EndDate.DayNumber - item.StartDate.DayNumber + 1;
-                if (requestedDays <= 0 || requestedDays > maximumCalendarDays)
-                {
-                    feedback = "The leave-day count is invalid.";
-                    feedbackDetail = $"Enter a value greater than zero and no more than {maximumCalendarDays} calendar day(s).";
-                    return;
-                }
-                item.ScheduledWorkdays = requestedDays;
-            }
-
-            if (approve && !string.Equals(item.LeaveType, "Unpaid leave", StringComparison.Ordinal))
-            {
-                var today = DateOnly.FromDateTime(DateTime.Today);
-                var policy = await db.OrganizationLeavePolicies
-                    .Where(x => x.OrganizationId == item.EmploymentRecord.OrganizationId
-                        && x.LeaveType == item.LeaveType
-                        && (x.Status == "Active" || x.Status == "Superseded")
-                        && x.EffectiveFrom <= item.StartDate
-                        && (!x.EffectiveTo.HasValue || x.EffectiveTo.Value >= item.StartDate))
-                    .OrderByDescending(x => x.EffectiveFrom)
-                    .FirstOrDefaultAsync();
-                if (policy is null)
-                {
-                    feedback = "An active leave policy is required for the requested date.";
-                    feedbackDetail = $"Configure and activate a reviewed policy for {item.LeaveType} that covers {item.StartDate:dd MMM yyyy}. No balance was changed.";
-                    return;
-                }
-
-                await LeaveLedgerService.SyncAccrualsAsync(db, item.EmploymentRecord, today, userId);
-                var currentBalance = await LeaveLedgerService.GetBalanceAsync(db, item.EmploymentRecordId, item.LeaveType, item.StartDate);
-                if (!policy.AllowNegativeBalance && currentBalance < requestedDays)
-                {
-                    feedback = "Insufficient available leave balance.";
-                    feedbackDetail = $"Current balance: {currentBalance:0.####} days; requested: {requestedDays:0.####} days. No decision or ledger entry was saved.";
-                    return;
-                }
-
-                db.LeaveLedger.Add(new LeaveLedgerRecord
-                {
-                    EmploymentRecordId = item.EmploymentRecordId,
-                    LeaveType = item.LeaveType,
-                    EffectiveDate = item.StartDate,
-                    DayDelta = -requestedDays,
-                    EntryType = "Usage",
-                    Reference = $"leave-request:{item.Id:N}",
-                    Notes = $"Approved leave request {item.Id}.",
-                    CreatedByUserId = userId
-                });
-            }
-
-            item.Status = approve ? "Approved" : "Rejected";
-            item.ReviewedByUserId = userId;
-            item.DecisionUtc = DateTime.UtcNow;
-            db.AuditEvents.Add(new AuditEvent
-            {
-                OrganizationId = item.EmploymentRecord.OrganizationId,
-                ActorUserId = userId,
-                Action = approve ? "LeaveRequestApproved" : "LeaveRequestRejected",
-                EntityType = "LeaveRequest",
-                EntityId = item.Id.ToString(),
-                DetailsJson = System.Text.Json.JsonSerializer.Serialize(new { item.LeaveType, item.StartDate, item.EndDate, item.Status })
-            });
-            await db.SaveChangesAsync();
-            await transaction.CommitAsync();
-            feedback = approve ? "Leave request approved." : "Leave request declined.";
-            feedbackDetail = approve && !string.Equals(item.LeaveType, "Unpaid leave", StringComparison.Ordinal)
-                ? "The employee can see the decision in their request history. An idempotent usage entry was recorded in the leave ledger."
-                : "The employee can see the decision in their request history. Unpaid leave does not deduct an accrued balance.";
-            await LoadRequests();
+            var result = await LeaveRequestService.DecideAsync(db, userId, requestId, approve,
+                approvalDayCounts.GetValueOrDefault(requestId), approvalConfirmations.GetValueOrDefault(requestId), DateOnly.FromDateTime(DateTime.Today));
+            feedback = result.Message;
+            feedbackDetail = result.Succeeded ? "The decision has been saved." : "No decision was saved.";
+            if (result.Succeeded) await LoadRequests();
         }
         catch (DbUpdateException)
         {
-            feedback = "The decision could not be saved.";
-            feedbackDetail = "Please refresh and try again.";
+            feedback = "The request changed or the decision could not be saved.";
+            feedbackDetail = "Refresh the list before trying again.";
         }
         finally { isReviewing = false; }
     }
-
     private sealed record ApprovalItem(Guid Id, string EmployeeName, string OrganizationName, string LeaveType,
         DateOnly StartDate, DateOnly EndDate, decimal ScheduledWorkdays, string? EmployeeNote, DateTime RequestedUtc, string RequestedByUserId);
 }
