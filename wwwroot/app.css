@@ -158,3 +158,21 @@ html,body{background:#f3f6fa;color:#14283e}
 /* Keep account actions reachable on short desktop screens. */
 @media(min-width:761px){.sidebar{overflow-y:auto}.sidebar-bottom{padding-top:16px}}
 @media(max-width:760px){.request-item{flex-wrap:wrap}.request-item .button-secondary{margin-left:auto}}
+
+/* Blazor reveals this banner with an inline display style only after an error. */
+#blazor-error-ui {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    z-index: 1000;
+    box-sizing: border-box;
+    padding: 1rem 3rem 1rem 1.25rem;
+    background: #fff3cd;
+    color: #332701;
+    box-shadow: 0 -1px 6px rgba(0, 0, 0, 0.15);
+}
+
+#blazor-error-ui .reload { color: inherit; text-decoration: underline; }
+#blazor-error-ui .dismiss { position: absolute; top: 1rem; right: 1rem; cursor: pointer; }
